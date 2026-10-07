@@ -1,0 +1,2281 @@
+import React, { useState, useEffect, useMemo, useRef } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import {
+  Search, Trash2, X, User, Plus, Minus, Check,
+  Store, Clock, ScanLine, LayoutGrid, Cake, Utensils, Coffee, Croissant,
+  Printer, ChevronUp, Settings, ClipboardList, Menu, Volume2, VolumeX,
+  UtensilsCrossed, Bell, CreditCard, Banknote, QrCode, Split, Receipt,
+  DollarSign, Armchair, ChevronDown, RefreshCw, FileText, CheckCircle2,
+  AlertCircle, ArrowRight, Eye, Layers,
+  MoveLeft,
+  ArrowLeft
+} from "lucide-react";
+import { message, Drawer, Modal, Tag, Select, notification, Radio } from "antd";
+import productService from "../../Product/services/productService.js";
+import customerService from "../../customer/service/customerService.js";
+import billingService from "../service/billingService.js";
+import localPrintService from "../service/localPrintService.js";
+import tableService from "../service/tableService.js";
+import { useAuth } from "../../context/AuthContext.jsx";
+import { useBranch } from "../../context/BranchContext.jsx";
+import FoodThumbnail from "../utils/FoodThumbnail.jsx";
+import { broadcastKOTEvent, kotChannel } from "../utils/kotBroadcast.js";
+import dayjs from "dayjs";
+
+const fmt = (v) =>
+  new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR" }).format(v || 0);
+
+// Play custom order placed notification sound from public/order_placed_notification.mp3
+const playSoundAlert = () => {
+  try {
+    const audio = new Audio("/order_placed_notification.mp3");
+    audio.currentTime = 0;
+    const playPromise = audio.play();
+    if (playPromise !== undefined) {
+      playPromise.catch(() => {
+        playSynthBeep();
+      });
+    }
+  } catch {
+    playSynthBeep();
+  }
+};
+
+const playSynthBeep = () => {
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(880, ctx.currentTime);
+    gain.gain.setValueAtTime(0.2, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.3);
+  } catch (e) {
+    console.warn("Audio play blocked:", e);
+  }
+};
+
+export default function POSPage() {
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const editId = searchParams.get("edit");
+  const isEdit = Boolean(editId);
+
+  const { user } = useAuth() || {};
+  const { selectedBranch } = useBranch() || {};
+
+  // Clock
+  const [currentTime, setCurrentTime] = useState(new Date());
+  useEffect(() => {
+    const t = setInterval(() => setCurrentTime(new Date()), 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  // Audio alerts
+  const [soundEnabled, setSoundEnabled] = useState(true);
+
+  // Products Catalogue
+  const [allItems, setAllItems] = useState([]);
+  const [activeCategory, setActiveCategory] = useState("all");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [loadingProducts, setLoadingProducts] = useState(false);
+
+  // Cart
+  const [cart, setCart] = useState([]);
+
+  // Customer State
+  const [customerName, setCustomerName] = useState("");
+  const [customerPhone, setCustomerPhone] = useState("");
+  const [customerModalOpen, setCustomerModalOpen] = useState(false);
+  const [custSearchQuery, setCustSearchQuery] = useState("");
+  const [custSuggestions, setCustSuggestions] = useState([]);
+
+  // Table / Counter configuration
+  const [tables, setTables] = useState([]);
+  const [tableNo, setTableNo] = useState("Table 1");
+  const [selectedTableId, setSelectedTableId] = useState(null);
+  const [orderType, setOrderType] = useState("Dine In"); // 'Dine In' | 'Takeaway' | 'Delivery'
+  const [loadedBillId, setLoadedBillId] = useState(null); // When an active table's bill is loaded
+  const [tablesModalOpen, setTablesModalOpen] = useState(false);
+
+  // Payment & Settlement State
+  const [paymentModalOpen, setPaymentModalOpen] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState("cash"); // 'cash' | 'UPI Current Account' | 'UPI Normal Account' | 'credit_card' | 'debit_card' | 'split'
+  const [tenderedAmount, setTenderedAmount] = useState("");
+  const [discountAmount, setDiscountAmount] = useState(0);
+  const [splitPayments, setSplitPayments] = useState([
+    { method: "cash", amount: 0 },
+    { method: "UPI Current Account", amount: 0 },
+  ]);
+  const [upiTxnRef, setUpiTxnRef] = useState("");
+  const [cardRefNo, setCardRefNo] = useState("");
+  const [settlingPayment, setSettlingPayment] = useState(false);
+  const [settledSuccessData, setSettledSuccessData] = useState(null);
+
+  // KOT Creation in flight
+  const [submittingKOT, setSubmittingKOT] = useState(false);
+
+  // Mobile Bottom Sheet
+  const [mobileCartOpen, setMobileCartOpen] = useState(false);
+
+  // View KOTs Drawer
+  const [kotDrawerOpen, setKotDrawerOpen] = useState(false);
+  const [kitchenOrders, setKitchenOrders] = useState([]);
+  const [loadingKitchen, setLoadingKitchen] = useState(false);
+
+  // Settings Modal
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
+  // Scan Barcode Modal
+  const [scanModalOpen, setScanModalOpen] = useState(false);
+  const [manualBarcode, setManualBarcode] = useState("");
+
+  // Fetch products
+  const fetchProducts = async () => {
+    setLoadingProducts(true);
+    try {
+      const res = await productService.getAll({ limit: 500 });
+      const data = res?.data?.data || res?.data || [];
+      setAllItems(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error("Failed to fetch products:", err);
+      message.error("Failed to load products");
+    } finally {
+      setLoadingProducts(false);
+    }
+  };
+
+  const fetchTables = async () => {
+    try {
+      const res = await tableService.getAll();
+      if (res.data?.success) {
+        setTables(res.data.data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch tables:", err);
+    }
+  };
+
+  useEffect(() => {
+    fetchProducts();
+    fetchTables();
+  }, []);
+
+  // Kitchen orders & background KOT ready watcher
+  const seenReadyOrderIdsRef = useRef(new Set());
+  const initialKdsPollRef = useRef(true);
+
+  // Mark Order as Served from POS (Order Takers / Admin)
+  const handleMarkOrderServed = async (orderId, orderLabel = "Order") => {
+    // 1. Optimistically update local state immediately
+    setKitchenOrders((prev) =>
+      prev.map((o) =>
+        o.id === orderId
+          ? { ...o, kot_status: "served", kot_served_at: new Date().toISOString() }
+          : o
+      )
+    );
+
+    // 2. Dismiss popup notification immediately
+    notification.destroy(orderId);
+
+    try {
+      // 3. Persist to server
+      await billingService.updateKOTStatus(orderId, "served");
+      message.success(`${orderLabel} marked as served!`);
+
+      // 4. Instant cross-tab broadcast to Kitchen KDS and all other tabs
+      broadcastKOTEvent("KOT_STATUS_UPDATED", {
+        id: orderId,
+        status: "served",
+        kot_status: "served",
+      });
+      broadcastKOTEvent("KOT_SERVED", { id: orderId });
+
+      // 5. Secondary background queue refresh
+      fetchKitchenQueue();
+    } catch (err) {
+      console.error("Failed to mark order as served:", err);
+      message.error(err?.response?.data?.error || err?.message || "Failed to mark order as served");
+      fetchKitchenQueue();
+    }
+  };
+
+  // Fetch kitchen orders for KOT Drawer & background ready alerts
+  const fetchKitchenQueue = async () => {
+    if (document.hidden) return;
+    setLoadingKitchen(true);
+    try {
+      const res = await billingService.getKitchenQueue();
+      const active = res?.data || [];
+      setKitchenOrders(active);
+
+      // Check for orders that moved to 'ready'
+      const readyOrders = active.filter((o) => o.kot_status === "ready");
+
+      const newlyReady = [];
+      readyOrders.forEach((o) => {
+        if (!seenReadyOrderIdsRef.current.has(o.id)) {
+          newlyReady.push(o);
+          seenReadyOrderIdsRef.current.add(o.id);
+        }
+      });
+
+      if (newlyReady.length > 0 && !initialKdsPollRef.current) {
+        if (soundEnabled) {
+          playSoundAlert();
+        }
+
+        newlyReady.forEach((order) => {
+          const kotLabel = order.kot_number ? `KOT #${order.kot_number}` : order.billing_no;
+          const tableLabel = order.table_no || "Table 1";
+          const itemCount = order.items?.reduce((s, i) => s + (i.quantity || 1), 0) || 0;
+
+          notification.success({
+            message: (
+              <span className="font-bold text-emerald-800 flex items-center gap-1.5">
+                <UtensilsCrossed size={16} className="text-emerald-600" />
+                Order Ready to Serve!
+              </span>
+            ),
+            description: (
+              <div className="space-y-1 text-xs">
+                <p className="font-black text-slate-800">{kotLabel} • {tableLabel}</p>
+                <p className="text-slate-600">{itemCount} item(s) are cooked and ready to serve to customer.</p>
+              </div>
+            ),
+            btn: (
+              <button
+                onClick={() => handleMarkOrderServed(order.id, kotLabel)}
+                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] text-white rounded-lg text-xs font-bold shadow-xs cursor-pointer"
+              >
+                Mark as Served
+              </button>
+            ),
+            key: order.id,
+            duration: 12,
+            placement: "topRight",
+          });
+        });
+      }
+
+      if (initialKdsPollRef.current) {
+        readyOrders.forEach((o) => seenReadyOrderIdsRef.current.add(o.id));
+        initialKdsPollRef.current = false;
+      }
+    } catch (err) {
+      console.warn("Failed to fetch kitchen orders:", err);
+    } finally {
+      setLoadingKitchen(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchKitchenQueue();
+
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        fetchKitchenQueue();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    const interval = setInterval(fetchKitchenQueue, 5000);
+
+    const handleBroadcast = (e) => {
+      const eventType = e.data?.type;
+      const ticketId = e.data?.payload?.id || e.data?.id;
+      const newStatus = e.data?.payload?.status || e.data?.status;
+
+      if (eventType === "KOT_SERVED" || (eventType === "KOT_STATUS_UPDATED" && newStatus === "served")) {
+        if (ticketId) {
+          notification.destroy(ticketId);
+          setKitchenOrders((prev) =>
+            prev.map((o) => (o.id === ticketId ? { ...o, kot_status: "served" } : o))
+          );
+        }
+      }
+
+      if (eventType === "KOT_STATUS_UPDATED" || eventType === "KOT_SERVED" || eventType === "NEW_KOT_ORDER") {
+        fetchKitchenQueue();
+      }
+    };
+
+    if (kotChannel) {
+      kotChannel.addEventListener("message", handleBroadcast);
+    }
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      if (kotChannel) {
+        kotChannel.removeEventListener("message", handleBroadcast);
+      }
+    };
+  }, [soundEnabled]);
+
+  // Load existing bill if editing
+  useEffect(() => {
+    if (!editId) return;
+    billingService
+      .getById(editId)
+      .then((res) => {
+        const sale = res?.data?.data ?? res?.data;
+        if (!sale) return;
+        setCustomerName(sale.customer_name || "");
+        setCustomerPhone(sale.customer_phone || "");
+        if (sale.counter_no) {
+          setTableNo(sale.counter_no.replace("Counter ", "Table "));
+        }
+        if (Array.isArray(sale.items)) {
+          setCart(
+            sale.items.map((i) => ({
+              id: i.product_id,
+              name: i.product_name,
+              category_name: i.category_name || "Item",
+              image_url: i.product?.image_url || i.image_url,
+              price: parseFloat(i.unit_price || 0),
+              qty: i.quantity || 1,
+              tax_rate: parseFloat(i.tax_percentage || 0),
+            }))
+          );
+        }
+      })
+      .catch(() => message.error("Failed to load bill"));
+  }, [editId]);
+
+  // Dynamic Categories
+  const categoryTabs = useMemo(() => {
+    const rawCategories = Array.from(
+      new Set(
+        allItems
+          .map((i) => i.category_name || i.category?.category_name)
+          .filter(Boolean)
+      )
+    );
+
+    // Standard styling definitions matching mockup
+    const categoryStyles = {
+      all: { label: "All", icon: <LayoutGrid size={22} />, bg: "bg-blue-600 text-white", activeBorder: "ring-2 ring-blue-500" },
+      sweets: { label: "Sweets", icon: <Cake size={22} />, bg: "bg-pink-50 text-pink-700 border-pink-100", activeBg: "bg-pink-100 ring-2 ring-pink-400" },
+      sweet: { label: "Sweets", icon: <Cake size={22} />, bg: "bg-pink-50 text-pink-700 border-pink-100", activeBg: "bg-pink-100 ring-2 ring-pink-400" },
+      snacks: { label: "Snacks", icon: <Utensils size={22} />, bg: "bg-orange-50 text-orange-700 border-orange-100", activeBg: "bg-orange-100 ring-2 ring-orange-400" },
+      snack: { label: "Snacks", icon: <Utensils size={22} />, bg: "bg-orange-50 text-orange-700 border-orange-100", activeBg: "bg-orange-100 ring-2 ring-orange-400" },
+      beverages: { label: "Beverages", icon: <Coffee size={22} />, bg: "bg-emerald-50 text-emerald-700 border-emerald-100", activeBg: "bg-emerald-100 ring-2 ring-emerald-400" },
+      beverage: { label: "Beverages", icon: <Coffee size={22} />, bg: "bg-emerald-50 text-emerald-700 border-emerald-100", activeBg: "bg-emerald-100 ring-2 ring-emerald-400" },
+      bakery: { label: "Bakery", icon: <Croissant size={22} />, bg: "bg-purple-50 text-purple-700 border-purple-100", activeBg: "bg-purple-100 ring-2 ring-purple-400" },
+    };
+
+    const tabs = [{ key: "all", label: "All", icon: <LayoutGrid size={22} />, bg: categoryStyles.all.bg }];
+
+    // Ensure mockup categories appear if present or fallback
+    const preferredOrder = ["sweets", "snacks", "beverages", "bakery"];
+    const addedKeys = new Set(["all"]);
+
+    preferredOrder.forEach((pref) => {
+      const match = rawCategories.find((c) => c.toLowerCase().includes(pref));
+      if (match && !addedKeys.has(match.toLowerCase())) {
+        addedKeys.add(match.toLowerCase());
+        const style = categoryStyles[pref] || {
+          label: match,
+          icon: <Utensils size={22} />,
+          bg: "bg-slate-50 text-slate-700 border-slate-200",
+        };
+        tabs.push({ key: match.toLowerCase(), label: match, icon: style.icon, bg: style.bg });
+      }
+    });
+
+    // Add any remaining categories
+    rawCategories.forEach((cat) => {
+      if (!addedKeys.has(cat.toLowerCase())) {
+        addedKeys.add(cat.toLowerCase());
+        tabs.push({
+          key: cat.toLowerCase(),
+          label: cat,
+          icon: <Utensils size={22} />,
+          bg: "bg-slate-50 text-slate-700 border-slate-200",
+        });
+      }
+    });
+
+    return tabs;
+  }, [allItems]);
+
+  // Filtered items
+  const filteredItems = useMemo(() => {
+    return allItems.filter((item) => {
+      const cat = (item.category_name || item.category?.category_name || "").toLowerCase();
+      const matchCategory = activeCategory === "all" || cat.includes(activeCategory);
+      const name = (item.product_name || "").toLowerCase();
+      const code = (item.product_code || "").toLowerCase();
+      const query = searchTerm.toLowerCase();
+      const matchSearch = !searchTerm || name.includes(query) || code.includes(query);
+      return matchCategory && matchSearch;
+    });
+  }, [allItems, activeCategory, searchTerm]);
+
+  // Cart operations (Minimum 48px touch targets)
+  const addToCart = (product) => {
+    setCart((prev) => {
+      const exists = prev.find((p) => p.id === product.id);
+      if (exists) {
+        return prev.map((p) => (p.id === product.id ? { ...p, qty: p.qty + 1 } : p));
+      }
+      const taxRate = parseFloat(
+        (product.tax_percentage || "0").toString().replace("%", "")
+      ) || 0;
+      return [
+        ...prev,
+        {
+          id: product.id,
+          name: product.product_name,
+          category_name: product.category_name || "Item",
+          image_url: product.image_url,
+          price: parseFloat(product.selling_price || product.unit_price || 0),
+          qty: 1,
+          tax_rate: taxRate,
+        },
+      ];
+    });
+  };
+
+  const updateQty = (id, delta) => {
+    setCart((prev) =>
+      prev
+        .map((p) => {
+          if (p.id === id) {
+            const nextQty = p.qty + delta;
+            return nextQty > 0 ? { ...p, qty: nextQty } : null;
+          }
+          return p;
+        })
+        .filter(Boolean)
+    );
+  };
+
+  const removeItem = (id) => {
+    setCart((prev) => prev.filter((p) => p.id !== id));
+  };
+
+  const clearCart = () => {
+    setCart([]);
+  };
+
+  // Computations
+  const totalItemCount = cart.reduce((sum, item) => sum + item.qty, 0);
+  const subtotal = cart.reduce((sum, item) => sum + item.price * item.qty, 0);
+  const tax = cart.reduce((sum, item) => sum + item.price * item.qty * (item.tax_rate / 100), 0);
+  const total = subtotal + tax;
+  const readyOrdersCount = kitchenOrders.filter((o) => o.kot_status === "ready").length;
+
+  // Search customers
+  const handleCustSearch = async (query) => {
+    setCustSearchQuery(query);
+    if (!query || query.trim().length < 2) {
+      setCustSuggestions([]);
+      return;
+    }
+    try {
+      const res = await customerService.getAllCustomers({ search: query.trim(), limit: 5 });
+      const rows = res?.data?.data ?? res?.data ?? [];
+      setCustSuggestions(Array.isArray(rows) ? rows : rows?.data ?? []);
+    } catch {
+      setCustSuggestions([]);
+    }
+  };
+
+  const selectCustomer = (cust) => {
+    setCustomerName(cust.customer_name || cust.name || `${cust.first_name || ""} ${cust.last_name || ""}`.trim());
+    setCustomerPhone(cust.customer_phone || cust.phone || "");
+    setCustomerModalOpen(false);
+  };
+
+  const clearCustomer = () => {
+    setCustomerName("");
+    setCustomerPhone("");
+  };
+
+  // Barcode quick search
+  const handleBarcodeSubmit = (e) => {
+    if (e) e.preventDefault();
+    if (!manualBarcode.trim()) return;
+    const found = allItems.find(
+      (item) =>
+        item.product_code === manualBarcode.trim() ||
+        item.barcode === manualBarcode.trim()
+    );
+    if (found) {
+      addToCart(found);
+      message.success(`Added ${found.product_name} to order`);
+      setManualBarcode("");
+      setScanModalOpen(false);
+    } else {
+      message.warning(`No product found with code "${manualBarcode}"`);
+    }
+  };
+
+  const ALL_TABLES = useMemo(() => {
+    if (tables.length === 0) {
+      return [
+        "Table 1", "Table 2", "Table 3", "Table 4", "Table 5",
+        "Table 6", "Table 7", "Table 8", "Table 9", "Table 10",
+        "Counter 1", "Counter 2", "Takeaway"
+      ];
+    }
+    return tables.map(t => t.table_no);
+  }, [tables]);
+
+  // Active table mapping from live kitchen orders
+  const activeTableMap = useMemo(() => {
+    const map = {};
+    kitchenOrders.forEach((order) => {
+      let tbl = order.table_no;
+      if (!tbl && order.counter_no) {
+        tbl = order.counter_no.startsWith("Counter ")
+          ? order.counter_no.replace("Counter ", "Table ")
+          : order.counter_no;
+      }
+      if (!tbl) tbl = "Table 1";
+      if (!map[tbl]) map[tbl] = [];
+      map[tbl].push(order);
+    });
+    return map;
+  }, [kitchenOrders]);
+
+  const activeTablesCount = Object.keys(activeTableMap).length;
+
+  const currentLoadedOrder = useMemo(() => {
+    if (!loadedBillId) return null;
+    return kitchenOrders.find((o) => o.id === loadedBillId) || null;
+  }, [loadedBillId, kitchenOrders]);
+
+  // Select Table from Grid / Modal
+  const handleSelectTable = (tbl) => {
+    setTableNo(tbl);
+    const selectedTblObj = tables.find(t => t.table_no === tbl);
+    setSelectedTableId(selectedTblObj ? selectedTblObj.id : null);
+
+    const existingOrders = activeTableMap[tbl];
+    if (existingOrders && existingOrders.length > 0) {
+      loadBillIntoCart(existingOrders[0]);
+    } else {
+      setLoadedBillId(null);
+      setCart([]);
+      clearCustomer();
+    }
+    setTablesModalOpen(false);
+  };
+
+  // Helper to map order items to cart format with catalogue fallbacks
+  const mapOrderItemsToCart = (items) => {
+    if (!Array.isArray(items)) return [];
+    return items.map((i) => {
+      const prodId = i.product_id || i.product?.id || i.id;
+      const matchedProduct = allItems.find(
+        (p) =>
+          p.id === prodId ||
+          (p.product_name &&
+            (i.product_name || i.product?.product_name) &&
+            p.product_name.trim().toLowerCase() === (i.product_name || i.product?.product_name || "").trim().toLowerCase())
+      );
+
+      const parsedPrice = parseFloat(
+        i.unit_price ??
+        i.price ??
+        i.product?.selling_price ??
+        matchedProduct?.selling_price ??
+        matchedProduct?.unit_price ??
+        0
+      );
+
+      const parsedTax = parseFloat(
+        i.tax_percentage ??
+        i.tax_rate ??
+        i.product?.tax_percentage ??
+        matchedProduct?.tax_percentage ??
+        0
+      );
+
+      return {
+        id: prodId || matchedProduct?.id || `item-${Date.now()}-${Math.random()}`,
+        name: i.product_name || i.product?.product_name || matchedProduct?.product_name || "Item",
+        category_name: i.category_name || matchedProduct?.category_name || "Item",
+        image_url: i.image_url || i.product?.image_url || matchedProduct?.image_url || null,
+        price: isNaN(parsedPrice) ? 0 : parsedPrice,
+        qty: parseInt(i.quantity || i.qty || 1, 10),
+        tax_rate: isNaN(parsedTax) ? 0 : parsedTax,
+      };
+    });
+  };
+
+  // Load a table's bill into the cart
+  const loadBillIntoCart = async (order) => {
+    if (!order) return;
+    setLoadedBillId(order.id);
+    const tbl = order.table_no || (order.counter_no ? order.counter_no.replace("Counter ", "Table ") : "Table 1");
+    setTableNo(tbl);
+    if (order.customer_name) setCustomerName(order.customer_name);
+    if (order.customer_phone) setCustomerPhone(order.customer_phone);
+
+    if (Array.isArray(order.items) && order.items.length > 0) {
+      setCart(mapOrderItemsToCart(order.items));
+    }
+    setTablesModalOpen(false);
+    message.success(`Loaded active order for ${tbl}`);
+
+    // If order has an ID, asynchronously fetch full authoritative bill record to ensure latest prices/taxes
+    if (order.id) {
+      try {
+        const res = await billingService.getById(order.id);
+        const fullBill = res?.data?.data ?? res?.data ?? res;
+        if (fullBill) {
+          if (fullBill.customer_name) setCustomerName(fullBill.customer_name);
+          if (fullBill.customer_phone) setCustomerPhone(fullBill.customer_phone);
+          if (Array.isArray(fullBill.items) && fullBill.items.length > 0) {
+            setCart(mapOrderItemsToCart(fullBill.items));
+          }
+        }
+      } catch (err) {
+        console.warn("Could not refresh full bill details:", err);
+      }
+    }
+  };
+
+  // Start fresh empty order
+  const handleStartFreshOrder = () => {
+    setLoadedBillId(null);
+    setCart([]);
+    clearCustomer();
+    message.info(`Ready for new order on ${tableNo}`);
+  };
+
+  // Open Payment & Settlement Modal
+  const handleOpenPayment = async (targetOrder = null) => {
+    let orderToLoad = targetOrder;
+    let targetTotal = total;
+
+    if (orderToLoad) {
+      loadBillIntoCart(orderToLoad);
+
+      const parsedTotal = parseFloat(orderToLoad.total_amount);
+      if (!isNaN(parsedTotal) && parsedTotal > 0) {
+        targetTotal = parsedTotal;
+      } else if (Array.isArray(orderToLoad.items)) {
+        const mapped = mapOrderItemsToCart(orderToLoad.items);
+        const st = mapped.reduce((sum, item) => sum + item.price * item.qty, 0);
+        const tx = mapped.reduce((sum, item) => sum + item.price * item.qty * (item.tax_rate / 100), 0);
+        targetTotal = st + tx;
+      }
+    }
+
+    if (cart.length === 0 && !targetOrder) {
+      message.warning("Cart is empty! Select an active table or add items first.");
+      return;
+    }
+
+    setPaymentMethod("cash");
+    setDiscountAmount(0);
+    setTenderedAmount(targetTotal.toString());
+    setSplitPayments([
+      { method: "cash", amount: Math.floor(targetTotal / 2) },
+      { method: "UPI Current Account", amount: targetTotal - Math.floor(targetTotal / 2) },
+    ]);
+    setPaymentModalOpen(true);
+  };
+
+  // Confirm Payment & Settlement
+  const handleConfirmSettlement = async (shouldPrint = true) => {
+    if (cart.length === 0) return;
+    setSettlingPayment(true);
+    try {
+      const discount = parseFloat(discountAmount) || 0;
+      const finalTotal = Math.max(0, total - discount);
+
+      let splitPayload = null;
+      if (paymentMethod === "split") {
+        const splitSum = splitPayments.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
+        if (Math.abs(splitSum - finalTotal) > 0.5) {
+          message.error(`Split amounts sum (₹${splitSum}) must equal final total (₹${finalTotal})`);
+          setSettlingPayment(false);
+          return;
+        }
+        splitPayload = splitPayments.map((p) => ({
+          method: p.method,
+          amount: parseFloat(p.amount) || 0,
+          reference_no: p.reference_no || null,
+        }));
+      }
+
+      let settledBillData = null;
+      const billId = loadedBillId || editId;
+
+      if (billId) {
+        const updatePayload = {
+          customer_name: customerName.trim() || "Walk-in Customer",
+          customer_phone: customerPhone.trim() || "9999999999",
+          payment_method: paymentMethod,
+          payment_details: splitPayload,
+          status: "paid",
+          paid_amount: finalTotal,
+          due_amount: 0,
+          discount_amount: discount,
+          total_amount: finalTotal,
+          table_id: selectedTableId,
+          order_type: orderType,
+          notes: `Order Type: ${orderType} | Table: ${tableNo}`,
+          billing_items: cart.map((item) => ({
+            product_id: item.id,
+            product_name: item.name,
+            quantity: item.qty,
+            unit_price: item.price,
+            discount_amount: 0,
+            tax_percentage: item.tax_rate,
+            tax_amount: item.price * item.qty * (item.tax_rate / 100),
+            total_price: item.price * item.qty * (1 + item.tax_rate / 100),
+          })),
+        };
+
+        const res = await billingService.update(billId, updatePayload);
+        settledBillData = res?.data || { id: billId, ...updatePayload };
+        message.success("💳 Bill Paid & Settled Successfully!");
+      } else {
+        // Direct counter checkout
+        const createPayload = {
+          customer_name: customerName.trim() || "Walk-in Customer",
+          customer_phone: customerPhone.trim() || "9999999999",
+          type: "Casier Billing",
+          counter_no: tableNo ? tableNo.replace("Table ", "Counter ") : "Counter 1",
+          billing_date: new Date().toISOString(),
+          subtotal_amount: subtotal,
+          tax_amount: tax,
+          discount_amount: discount,
+          total_amount: finalTotal,
+          paid_amount: finalTotal,
+          due_amount: 0,
+          payment_method: paymentMethod,
+          payment_details: splitPayload,
+          status: "paid",
+          table_id: selectedTableId,
+          order_type: orderType,
+          notes: `Order Type: ${orderType} | Table: ${tableNo}`,
+          billing_items: cart.map((item) => ({
+            product_id: item.id,
+            product_name: item.name,
+            quantity: item.qty,
+            unit_price: item.price,
+            discount_amount: 0,
+            tax_percentage: item.tax_rate,
+            tax_amount: item.price * item.qty * (item.tax_rate / 100),
+            total_price: item.price * item.qty * (1 + item.tax_rate / 100),
+          })),
+        };
+
+        const res = await billingService.create(createPayload);
+        settledBillData = res?.data || createPayload;
+        message.success("💳 Payment received & Bill created!");
+      }
+
+      broadcastKOTEvent("KOT_STATUS_UPDATED");
+
+      if (shouldPrint && settledBillData) {
+        try {
+          await localPrintService.printReceiptLocally(settledBillData);
+        } catch (err) {
+          console.warn("Local printer not available, opening customer copy preview:", err);
+          if (settledBillData.id) {
+            window.open(`/billing/customer-copy/${settledBillData.id}`, "_blank");
+          }
+        }
+      }
+
+      setSettledSuccessData(settledBillData);
+      setPaymentModalOpen(false);
+      setCart([]);
+      clearCustomer();
+      setLoadedBillId(null);
+      fetchKitchenQueue();
+    } catch (err) {
+      console.error("Payment settlement error:", err);
+      message.error(err?.response?.data?.error || err?.response?.data?.message || err?.message || "Failed to settle payment");
+    } finally {
+      setSettlingPayment(false);
+    }
+  };
+
+  // Primary Action: Create KOT and Send to Kitchen
+  const handleCreateKOT = async () => {
+    if (cart.length === 0) {
+      message.warning("Order is empty! Please select products.");
+      return;
+    }
+
+    setSubmittingKOT(true);
+    try {
+      const payload = {
+        customer_name: customerName.trim() || "Walk-in Customer",
+        customer_phone: customerPhone.trim() || "9999999999",
+        type: "Casier Billing",
+        counter_no: tableNo ? tableNo.replace("Table ", "Counter ") : "Counter 1",
+        billing_date: new Date().toISOString(),
+        subtotal_amount: subtotal,
+        tax_amount: tax,
+        discount_amount: 0,
+        total_amount: total,
+        paid_amount: 0,
+        due_amount: total,
+        payment_method: "cash",
+        status: "pending",
+        table_id: selectedTableId,
+        order_type: orderType,
+        notes: `Order Type: ${orderType} | Table: ${tableNo}`,
+        billing_items: cart.map((item) => ({
+          product_id: item.id,
+          product_name: item.name,
+          quantity: item.qty,
+          unit_price: item.price,
+          discount_amount: 0,
+          tax_percentage: item.tax_rate,
+          tax_amount: item.price * item.qty * (item.tax_rate / 100),
+          total_price: item.price * item.qty * (1 + item.tax_rate / 100),
+        })),
+      };
+
+      const billId = loadedBillId || editId;
+      if (billId) {
+        await billingService.update(billId, payload);
+        message.success("KOT order updated successfully!");
+      } else {
+        await billingService.create(payload);
+        message.success("🎉 KOT Created! Order sent directly to Kitchen.");
+      }
+
+      // Broadcast instant new KOT creation event to KDS
+      broadcastKOTEvent("NEW_KOT_ORDER");
+
+      if (soundEnabled) playSoundAlert();
+
+      // Reset cart and customer for fast rapid order taking
+      setCart([]);
+      clearCustomer();
+      setLoadedBillId(null);
+      setMobileCartOpen(false);
+      fetchKitchenQueue();
+    } catch (err) {
+      console.error("Failed to create KOT:", err);
+      message.error(err?.response?.data?.message || err?.message || "Failed to create KOT order");
+    } finally {
+      setSubmittingKOT(false);
+    }
+  };
+
+  return (
+    <div className="h-screen w-full bg-[#F8FAFC] flex flex-col overflow-hidden font-sans select-none">
+      {/* 1. TOP HEADER BAR */}
+      <header className="h-16 bg-white border-b border-slate-200/90 px-4 md:px-6 flex items-center justify-between shrink-0 z-20">
+        {/* Left: Store identity & nav */}
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => navigate("/billing/list")}
+            aria-label="Navigation Menu"
+            className="w-10 h-10 rounded-xl hover:bg-slate-100 flex items-center justify-center text-slate-700 transition cursor-pointer"
+          >
+            <ArrowLeft size={22} />
+          </button>
+
+          <div className="flex items-center gap-2.5">
+            <div className="w-10 h-10 rounded-xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600 shrink-0">
+              <Store size={22} />
+            </div>
+            <div>
+              <h1 className="text-sm hidden md:block md:text-base font-bold text-slate-800 !mb-0 leading-tight">
+                {selectedBranch?.name || "Sweets & Snacks POS"}
+              </h1>
+            </div>
+          </div>
+        </div>
+
+        {/* Center / Right: Table Switcher, Online Status, Time, and Staff Badge */}
+        <div className="flex items-center gap-3 md:gap-4">
+          {/* Table Management Trigger */}
+          <button
+            onClick={() => setTablesModalOpen(true)}
+            className={`px-3 py-1.5 rounded-xl border font-bold text-xs md:text-sm flex items-center gap-2 transition cursor-pointer shadow-sm ${
+              activeTablesCount > 0
+                ? "bg-amber-50 border-amber-300 text-amber-900 hover:bg-amber-100"
+                : "bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100"
+            }`}
+          >
+            <Armchair size={17} className={activeTablesCount > 0 ? "text-amber-600" : "text-slate-500"} />
+            <span>{tableNo}</span>
+            {activeTablesCount > 0 && (
+              <span className="px-2 py-0.5 rounded-full bg-amber-500 text-white text-[10px] font-black animate-pulse">
+                {activeTablesCount} Active
+              </span>
+            )}
+            <ChevronDown size={14} className="text-slate-400" />
+          </button>
+
+          <div className="hidden sm:flex items-center gap-1.5 text-xs font-semibold text-emerald-600 bg-emerald-50/80 px-2.5 py-1 rounded-full border border-emerald-100">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+            <span>Online</span>
+          </div>
+
+          <div className="hidden md:flex items-center gap-1.5 text-xs text-slate-500 font-medium">
+            <Clock size={14} className="text-slate-400" />
+            <span>{dayjs(currentTime).format("DD MMM YYYY  hh:mm A")}</span>
+          </div>
+
+          {/* User badge */}
+          <div className="flex items-center gap-2 pl-2 border-l border-slate-200">
+            <div className="w-8 h-8 rounded-full bg-[#1E293B] text-white flex items-center justify-center text-xs font-bold shrink-0">
+              <User size={16} />
+            </div>
+            <span className="text-xs font-semibold text-slate-800 hidden sm:inline">
+              {user?.username || "Staff"}
+            </span>
+          </div>
+        </div>
+      </header>
+
+      {/* 2. MAIN BODY (Split View Desktop, Full Catalogue Mobile) */}
+      <div className="flex-1 flex overflow-hidden min-h-0 p-3 md:p-4 gap-4">
+        {/* ================= LEFT PANEL: NEW ORDER (Desktop only) ================= */}
+        <div className="hidden lg:flex w-[380px] xl:w-[410px] bg-white rounded-2xl border border-slate-200/90 shadow-sm flex-col overflow-hidden shrink-0">
+          {/* Header row: Table selection banner */}
+          <div className="px-4 py-2.5 border-b border-slate-100 flex items-center justify-between shrink-0 bg-slate-50/80">
+            <div className="flex items-center gap-2 min-w-0">
+              <button
+                onClick={() => setTablesModalOpen(true)}
+                className="px-2.5 py-1 bg-white border border-slate-200 rounded-lg text-xs font-black text-slate-800 flex items-center gap-1.5 hover:bg-slate-50 cursor-pointer shadow-sm"
+              >
+                <Armchair size={14} className="text-blue-600 shrink-0" />
+                <span className="truncate">{tableNo}</span>
+                <ChevronDown size={12} className="text-slate-400" />
+              </button>
+
+              {loadedBillId && currentLoadedOrder && (
+                <Tag
+                  color={
+                    currentLoadedOrder.kot_status === "ready"
+                      ? "success"
+                      : currentLoadedOrder.kot_status === "preparing"
+                      ? "warning"
+                      : currentLoadedOrder.kot_status === "served"
+                      ? "purple"
+                      : "error"
+                  }
+                  className="font-bold text-[10px] rounded-md m-0 truncate"
+                >
+                  {currentLoadedOrder.kot_number ? `KOT #${currentLoadedOrder.kot_number}` : currentLoadedOrder.billing_no}
+                </Tag>
+              )}
+            </div>
+
+            <div className="flex items-center gap-1 shrink-0">
+              {loadedBillId ? (
+                <button
+                  onClick={handleStartFreshOrder}
+                  className="text-[11px] font-bold text-blue-600 hover:text-blue-800 px-2 py-1 bg-blue-50 rounded-md cursor-pointer transition"
+                >
+                  + New Bill
+                </button>
+              ) : (
+                <button
+                  onClick={clearCart}
+                  disabled={cart.length === 0}
+                  className="text-[11px] font-bold text-slate-500 hover:text-red-600 px-2 py-1 rounded-md disabled:opacity-40 cursor-pointer transition"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Customer Selection Row */}
+          <div className="px-4 py-2.5 border-b border-slate-100 flex items-center justify-between gap-2 shrink-0 bg-white">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-7 h-7 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center shrink-0 text-xs">
+                <User size={14} />
+              </div>
+              <span className="text-xs font-bold text-slate-700 truncate">
+                {customerName || "Walk-in Customer"}
+              </span>
+            </div>
+
+            {customerName ? (
+              <button
+                onClick={clearCustomer}
+                className="text-xs text-red-500 hover:text-red-700 font-bold px-2 py-1 cursor-pointer"
+              >
+                Reset
+              </button>
+            ) : (
+              <button
+                onClick={() => setCustomerModalOpen(true)}
+                className="min-h-[32px] px-2.5 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-bold transition flex items-center gap-1 cursor-pointer"
+              >
+                <Plus size={13} /> Add
+              </button>
+            )}
+          </div>
+
+          {/* Cart Items List */}
+          <div className="flex-1 overflow-y-auto p-3.5 space-y-2.5 min-h-0 divide-y divide-slate-100">
+            {cart.length === 0 ? (
+              <div className="h-full flex flex-col items-center justify-center text-slate-400 p-6 text-center">
+                <div className="w-14 h-14 rounded-full bg-slate-50 flex items-center justify-center mb-2.5 text-slate-300">
+                  <Utensils size={26} />
+                </div>
+                <p className="text-sm font-bold text-slate-600">No items in cart</p>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Select a table or tap items on catalogue to add
+                </p>
+              </div>
+            ) : (
+              cart.map((item) => (
+                <div key={item.id} className="pt-2 first:pt-0 flex items-center justify-between gap-3">
+                  {/* Thumbnail */}
+                  <div className="w-11 h-11 rounded-full overflow-hidden border border-slate-100 shrink-0 bg-slate-50 flex items-center justify-center">
+                    <FoodThumbnail
+                      src={item.image_url}
+                      alt={item.name}
+                      categoryName={item.category_name}
+                      fallbackSize="sm"
+                    />
+                  </div>
+
+                  {/* Name and unit price */}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs md:text-sm font-bold text-slate-800 truncate leading-tight">
+                      {item.name}
+                    </p>
+                    <p className="text-xs font-bold text-emerald-600 mt-0.5">
+                      {fmt(item.price)}
+                    </p>
+                  </div>
+
+                  {/* Stepper */}
+                  <div className="flex items-center border border-slate-200 rounded-lg bg-white shrink-0 overflow-hidden shadow-sm">
+                    <button
+                      onClick={() => updateQty(item.id, -1)}
+                      aria-label="Decrease quantity"
+                      className="min-w-[28px] min-h-[28px] flex items-center justify-center text-slate-600 hover:bg-slate-100 active:scale-95 transition cursor-pointer"
+                    >
+                      <Minus size={13} strokeWidth={2.5} />
+                    </button>
+                    <span className="w-7 text-center text-xs font-bold text-slate-800 select-none">
+                      {item.qty}
+                    </span>
+                    <button
+                      onClick={() => updateQty(item.id, 1)}
+                      aria-label="Increase quantity"
+                      className="min-w-[28px] min-h-[28px] flex items-center justify-center text-slate-600 hover:bg-slate-100 active:scale-95 transition cursor-pointer"
+                    >
+                      <Plus size={13} strokeWidth={2.5} />
+                    </button>
+                  </div>
+
+                  {/* Line item total */}
+                  <div className="text-right shrink-0 min-w-[60px]">
+                    <span className="text-xs md:text-sm font-bold text-slate-900">
+                      {fmt(item.price * item.qty)}
+                    </span>
+                  </div>
+
+                  {/* Delete button */}
+                  <button
+                    onClick={() => removeItem(item.id)}
+                    aria-label="Remove item"
+                    className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-red-500 transition cursor-pointer"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
+
+          {/* Cart Summary & Dual CTAs: Send to Kitchen + Settle Payment */}
+          <div className="p-4 border-t border-slate-200/90 bg-white space-y-2 shrink-0">
+            <div className="flex justify-between text-xs text-slate-500 font-medium">
+              <span>Items</span>
+              <span className="font-bold text-slate-700">{totalItemCount}</span>
+            </div>
+            <div className="flex justify-between text-xs text-slate-500 font-medium">
+              <span>Subtotal</span>
+              <span className="font-bold text-slate-700">{fmt(subtotal)}</span>
+            </div>
+            <div className="flex justify-between text-xs text-slate-500 font-medium">
+              <span>Tax</span>
+              <span className="font-bold text-slate-700">{fmt(tax)}</span>
+            </div>
+
+            <div className="pt-1.5 border-t border-slate-100 flex justify-between items-baseline">
+              <span className="text-base font-bold text-slate-800">Total</span>
+              <span className="text-2xl font-black text-emerald-600">
+                {fmt(total)}
+              </span>
+            </div>
+
+            {/* DUAL ACTION BUTTONS (Order Taker KOT + Cashier Settle & Pay) */}
+            <div className="grid grid-cols-2 gap-2 pt-1">
+              {/* 1. SEND TO KITCHEN (KOT) */}
+              <button
+                onClick={handleCreateKOT}
+                disabled={submittingKOT || cart.length === 0}
+                className="min-h-[52px] py-2 px-2.5 bg-[#F97316] hover:bg-[#EA580C] active:scale-[0.99] !text-white rounded-xl flex flex-col items-center justify-center shadow-md shadow-orange-500/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+              >
+                <div className="flex items-center gap-1.5">
+                  <Printer size={17} strokeWidth={2.4} />
+                  <span className="text-xs font-black uppercase tracking-tight">
+                    {submittingKOT ? "Sending..." : loadedBillId ? "Update KOT" : "Create KOT"}
+                  </span>
+                </div>
+                <span className="text-[10px] text-orange-100 font-medium leading-none mt-0.5">
+                  Send to Kitchen
+                </span>
+              </button>
+
+              {/* 2. PAY & SETTLE BILL */}
+              <button
+                onClick={() => handleOpenPayment()}
+                disabled={cart.length === 0}
+                className="min-h-[52px] py-2 px-2.5 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] !text-white rounded-xl flex flex-col items-center justify-center shadow-md shadow-emerald-500/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+              >
+                <div className="flex items-center gap-1.5">
+                  <CreditCard size={17} strokeWidth={2.4} />
+                  <span className="text-xs font-black uppercase tracking-tight">
+                    Pay & Settle
+                  </span>
+                </div>
+                <span className="text-[10px] text-emerald-100 font-bold leading-none mt-0.5">
+                  {fmt(total)}
+                </span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* ================= RIGHT SECTION: PRODUCTS CATALOGUE ================= */}
+        <div className="flex-1 flex flex-col overflow-hidden min-h-0 gap-3">
+          {/* Top Search & Barcode Scan Row */}
+          <div className="flex items-center gap-3 shrink-0">
+            <div className="relative flex-1">
+              <Search
+                size={18}
+                className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"
+              />
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Search product..."
+                className="w-full pl-10 pr-10 py-3 bg-white border border-slate-200 rounded-xl text-sm font-medium text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition shadow-sm"
+              />
+              {searchTerm && (
+                <button
+                  onClick={() => setSearchTerm("")}
+                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                >
+                  <X size={16} />
+                </button>
+              )}
+            </div>
+
+            <button
+              onClick={() => setScanModalOpen(true)}
+              className="min-h-[48px] px-4 py-2.5 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl text-xs md:text-sm font-bold text-slate-700 flex items-center gap-2 transition cursor-pointer shadow-sm shrink-0"
+            >
+              <ScanLine size={18} className="text-slate-600" />
+              <span>Scan</span>
+            </button>
+          </div>
+
+          {/* Category Tabs */}
+          <div className="flex items-center gap-2.5 overflow-x-auto py-1 shrink-0 scrollbar-none">
+            {categoryTabs.map((tab) => {
+              const isActive = activeCategory === tab.key;
+              return (
+                <button
+                  key={tab.key}
+                  onClick={() => setActiveCategory(tab.key)}
+                  className={`min-w-[85px] md:min-w-[100px] min-h-[58px] py-2 px-3 rounded-xl flex flex-col items-center justify-center gap-1 transition-all cursor-pointer select-none shrink-0 ${
+                    tab.key === "all"
+                      ? isActive
+                        ? "bg-blue-600 !text-white shadow-md shadow-blue-500/20 scale-[1.02]"
+                        : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50"
+                      : isActive
+                      ? `${tab.bg} ring-2 ring-blue-500 shadow-sm scale-[1.02]`
+                      : `${tab.bg} hover:brightness-95 border border-transparent`
+                  }`}
+                >
+                  <div className="shrink-0">{tab.icon}</div>
+                  <span className="text-xs font-bold capitalize truncate max-w-[90px]">
+                    {tab.label}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Products Grid (4 Columns Desktop, 2 Columns Mobile) */}
+          <div className="flex-1 overflow-y-auto min-h-0 pr-1">
+            {loadingProducts ? (
+              <div className="h-64 flex flex-col items-center justify-center text-slate-400">
+                <div className="w-8 h-8 border-3 border-blue-500 border-t-transparent rounded-full animate-spin mb-3" />
+                <p className="text-sm font-semibold">Loading catalogue...</p>
+              </div>
+            ) : filteredItems.length === 0 ? (
+              <div className="h-64 flex flex-col items-center justify-center text-slate-400">
+                <Utensils size={36} className="text-slate-300 mb-2" />
+                <p className="text-sm font-bold text-slate-600">No products found</p>
+                <p className="text-xs text-slate-400">Try selecting another category or clear search</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-3 md:gap-4 pb-20 lg:py-4">
+                {filteredItems.map((item) => {
+                  const inCart = cart.find((c) => c.id === item.id);
+                  const price = parseFloat(item.selling_price || item.unit_price || 0);
+
+                  return (
+                    <div
+                      key={item.id}
+                      onClick={() => addToCart(item)}
+                      className={`bg-white rounded-2xl border !pb-2 p-4 flex flex-col items-center justify-between cursor-pointer relative select-none transition-all duration-200 shadow-sm group hover:shadow-md hover:border-slate-300 active:scale-[0.98] ${
+                        inCart
+                          ? "border-emerald-500 ring-2 ring-emerald-500/20"
+                          : "border-slate-200/80"
+                      }`}
+                    >
+                      {/* In-stock indicator dot (Top-Right as in design) */}
+                      <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 absolute top-3.5 right-3.5" />
+
+                      {/* Product image (centered) */}
+                      <div className="w-24 h-24 md:w-28 md:h-28 rounded-full overflow-hidden flex items-center justify-center my-2 p-1 group-hover:scale-105 transition-transform duration-200">
+                        <FoodThumbnail
+                          src={item.image_url}
+                          alt={item.product_name}
+                          categoryName={item.category_name}
+                          fallbackSize="lg"
+                        />
+                      </div>
+
+                      {/* Title & Green Price */}
+                      <div className="w-full text-center mt-1">
+                        <h3 className="text-sm font-bold text-slate-800 leading-tight truncate">
+                          {item.product_name}
+                        </h3>
+                        <p className="text-sm font-bold text-emerald-600 mt-1">
+                          {fmt(price)}
+                        </p>
+                      </div>
+
+                      {/* Added quantity badge if in cart */}
+                      {inCart && (
+                        <div className="absolute top-3 left-3 bg-emerald-500 text-white text-[11px] font-black w-6 h-6 rounded-full flex items-center justify-center shadow-xs">
+                          {inCart.qty}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Bottom Action Row (Desktop) */}
+          <div className="hidden lg:flex items-center justify-between pt-2 border-t border-slate-200/80 shrink-0">
+            <button
+              onClick={() => setKotDrawerOpen(true)}
+              className="min-h-[48px] px-4 py-2.5 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl text-xs md:text-sm font-bold text-slate-700 flex items-center gap-2 transition cursor-pointer shadow-sm"
+            >
+              <ClipboardList size={18} className="text-slate-600" />
+              <span>View KOTs</span>
+              {readyOrdersCount > 0 && (
+                <span className="ml-1 px-2 py-0.5 rounded-full bg-emerald-500 text-white text-xs font-black animate-pulse flex items-center gap-1">
+                  <UtensilsCrossed size={12} /> {readyOrdersCount} Ready
+                </span>
+              )}
+            </button>
+
+            <button
+              onClick={() => setSettingsOpen(true)}
+              className="min-h-[48px] px-4 py-2.5 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl text-xs md:text-sm font-bold text-slate-700 flex items-center gap-2 transition cursor-pointer shadow-sm"
+            >
+              <Settings size={18} className="text-slate-600" />
+              <span>Settings</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* ================= 3. MOBILE STICKY BOTTOM CART BAR ================= */}
+      <div className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-slate-200 shadow-2xl p-3 space-y-2">
+        {/* Ready Orders notification strip on mobile if any */}
+        {readyOrdersCount > 0 && (
+          <div
+            onClick={() => setKotDrawerOpen(true)}
+            className="bg-emerald-500 text-white text-xs font-black px-3 py-1.5 rounded-xl flex items-center justify-between cursor-pointer animate-pulse"
+          >
+            <span className="flex items-center gap-1.5">
+              <UtensilsCrossed size={14} /> {readyOrdersCount} Order(s) Ready to Serve!
+            </span>
+            <span className="underline text-[11px]">View & Serve →</span>
+          </div>
+        )}
+
+        {/* Cart Preview Row */}
+        <div
+          onClick={() => setMobileCartOpen(true)}
+          className="flex items-center justify-between px-3 py-1 cursor-pointer"
+        >
+          <div className="flex items-center gap-2 text-slate-800">
+            <Utensils size={18} className="text-orange-500" />
+            <span className="text-sm font-black">
+              {totalItemCount} {totalItemCount === 1 ? "item" : "items"}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-base font-black text-emerald-600">
+              {fmt(total)}
+            </span>
+            <ChevronUp size={18} className="text-slate-400" />
+          </div>
+        </div>
+
+        {/* Dual Actions in Mobile Bottom Bar */}
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            onClick={handleCreateKOT}
+            disabled={submittingKOT || cart.length === 0}
+            className="py-3 px-3 bg-[#F97316] hover:bg-[#EA580C] active:scale-[0.99] !text-white rounded-xl flex items-center justify-center gap-2 shadow-md shadow-orange-500/25 transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+          >
+            <Printer size={18} strokeWidth={2.2} />
+            <span className="text-xs font-black tracking-tight leading-tight">
+              {submittingKOT ? "Sending..." : loadedBillId ? "Update KOT" : "Create KOT"}
+            </span>
+          </button>
+
+          <button
+            onClick={() => handleOpenPayment()}
+            disabled={cart.length === 0}
+            className="py-3 px-3 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] !text-white rounded-xl flex items-center justify-center gap-2 shadow-md shadow-emerald-500/25 transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+          >
+            <CreditCard size={18} strokeWidth={2.2} />
+            <span className="text-xs font-black tracking-tight leading-tight">
+              Pay & Settle
+            </span>
+          </button>
+        </div>
+      </div>
+
+      {/* ================= 4. MOBILE SLIDE-UP CART DRAWER ================= */}
+      <Drawer
+        placement="bottom"
+        height="80vh"
+        onClose={() => setMobileCartOpen(false)}
+        open={mobileCartOpen}
+        title={
+          <div className="flex items-center justify-between w-full">
+            <h2 className="text-base font-bold text-slate-800">Current Order ({tableNo})</h2>
+            <button
+              onClick={clearCart}
+              disabled={cart.length === 0}
+              className="text-xs text-red-500 font-bold px-2 py-1"
+            >
+              Clear
+            </button>
+          </div>
+        }
+      >
+        <div className="flex flex-col h-full">
+          {/* Customer selection in mobile drawer */}
+          <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 mb-3 flex justify-between items-center">
+            <div className="flex items-center gap-2">
+              <User size={16} className="text-slate-500" />
+              <span className="text-xs font-bold text-slate-700">
+                {customerName || "Walk-in Customer"}
+              </span>
+            </div>
+            <button
+              onClick={() => {
+                setMobileCartOpen(false);
+                setCustomerModalOpen(true);
+              }}
+              className="text-xs text-blue-600 font-bold"
+            >
+              {customerName ? "Change" : "+ Add"}
+            </button>
+          </div>
+
+          {/* Cart items list */}
+          <div className="flex-1 overflow-y-auto space-y-3 min-h-0 divide-y divide-slate-100">
+            {cart.map((item) => (
+              <div key={item.id} className="pt-2.5 flex items-center justify-between gap-2">
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-bold text-slate-800 truncate">{item.name}</p>
+                  <p className="text-xs font-semibold text-emerald-600">{fmt(item.price)}</p>
+                </div>
+
+                <div className="flex items-center border border-slate-200 rounded-lg">
+                  <button
+                    onClick={() => updateQty(item.id, -1)}
+                    className="min-w-[36px] min-h-[36px] flex items-center justify-center text-slate-600"
+                  >
+                    <Minus size={14} />
+                  </button>
+                  <span className="w-6 text-center text-xs font-bold">{item.qty}</span>
+                  <button
+                    onClick={() => updateQty(item.id, 1)}
+                    className="min-w-[36px] min-h-[36px] flex items-center justify-center text-slate-600"
+                  >
+                    <Plus size={14} />
+                  </button>
+                </div>
+
+                <span className="text-xs font-bold text-slate-900 w-14 text-right">
+                  {fmt(item.price * item.qty)}
+                </span>
+
+                <button
+                  onClick={() => removeItem(item.id)}
+                  className="w-8 h-8 flex items-center justify-center text-slate-400"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+            ))}
+          </div>
+
+          {/* Summary & Dual Action Buttons in Mobile Drawer */}
+          <div className="pt-3 border-t border-slate-100 space-y-2 mt-2">
+            <div className="flex justify-between text-xs text-slate-500">
+              <span>Subtotal:</span>
+              <span className="font-bold">{fmt(subtotal)}</span>
+            </div>
+            <div className="flex justify-between text-xs text-slate-500">
+              <span>Tax:</span>
+              <span className="font-bold">{fmt(tax)}</span>
+            </div>
+            <div className="flex justify-between text-base font-black text-slate-900 pt-1 border-t border-slate-100">
+              <span>Total:</span>
+              <span className="text-emerald-600">{fmt(total)}</span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-100">
+              <button
+                onClick={() => {
+                  setMobileCartOpen(false);
+                  handleCreateKOT();
+                }}
+                disabled={submittingKOT || cart.length === 0}
+                className="py-3 px-2 bg-[#F97316] hover:bg-[#EA580C] !text-white rounded-xl text-xs font-black uppercase flex items-center justify-center gap-1.5 shadow-md disabled:opacity-50"
+              >
+                <Printer size={16} />
+                <span>{loadedBillId ? "Update KOT" : "Create KOT"}</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  setMobileCartOpen(false);
+                  handleOpenPayment();
+                }}
+                disabled={cart.length === 0}
+                className="py-3 px-2 bg-emerald-600 hover:bg-emerald-700 !text-white rounded-xl text-xs font-black uppercase flex items-center justify-center gap-1.5 shadow-md disabled:opacity-50"
+              >
+                <CreditCard size={16} />
+                <span>Pay & Settle</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </Drawer>
+
+      {/* ================= 5. CUSTOMER MODAL (+ Add Customer) ================= */}
+      <Modal
+        title={<span className="font-bold text-slate-800">Select / Add Customer</span>}
+        open={customerModalOpen}
+        onCancel={() => setCustomerModalOpen(false)}
+        footer={null}
+        width={400}
+      >
+        <div className="space-y-4 py-2">
+          <div>
+            <label className="text-xs font-bold text-slate-500 mb-1.5 block">
+              Search by Name or Phone
+            </label>
+            <div className="relative">
+              <input
+                type="text"
+                value={custSearchQuery}
+                onChange={(e) => handleCustSearch(e.target.value)}
+                placeholder="Type customer phone or name..."
+                className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+              />
+            </div>
+
+            {/* Suggestions */}
+            {custSuggestions.length > 0 && (
+              <div className="mt-2 border border-slate-200 rounded-xl max-h-48 overflow-y-auto divide-y divide-slate-100">
+                {custSuggestions.map((cust) => (
+                  <div
+                    key={cust.id}
+                    onClick={() => selectCustomer(cust)}
+                    className="p-2.5 hover:bg-slate-50 cursor-pointer flex justify-between items-center text-xs"
+                  >
+                    <div>
+                      <span className="font-bold text-slate-800 block">
+                        {cust.customer_name || cust.name}
+                      </span>
+                      <span className="text-slate-400 font-medium">
+                        {cust.customer_phone || cust.phone}
+                      </span>
+                    </div>
+                    <Check size={14} className="text-emerald-500" />
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="border-t border-slate-100 pt-3">
+            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2">
+              Or Quick Walk-in Info
+            </span>
+            <div className="grid grid-cols-2 gap-2">
+              <input
+                type="text"
+                value={customerName}
+                onChange={(e) => setCustomerName(e.target.value)}
+                placeholder="Customer Name"
+                className="border border-slate-200 rounded-xl px-3 py-2 text-xs"
+              />
+              <input
+                type="text"
+                value={customerPhone}
+                onChange={(e) => setCustomerPhone(e.target.value)}
+                placeholder="Phone (Optional)"
+                className="border border-slate-200 rounded-xl px-3 py-2 text-xs"
+              />
+            </div>
+          </div>
+
+          <div className="flex gap-2 pt-2">
+            <button
+              onClick={() => {
+                clearCustomer();
+                setCustomerModalOpen(false);
+              }}
+              className="flex-1 py-2.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50"
+            >
+              Set Walk-in
+            </button>
+            <button
+              onClick={() => setCustomerModalOpen(false)}
+              className="flex-1 py-2.5 rounded-xl bg-blue-600 !text-white text-xs font-bold hover:bg-blue-700"
+            >
+              Done
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* ================= 6. VIEW KOTS SLIDE-OVER DRAWER ================= */}
+      <Drawer
+        placement="right"
+        width={380}
+        onClose={() => setKotDrawerOpen(false)}
+        open={kotDrawerOpen}
+        title={
+          <div className="flex items-center justify-between">
+            <span className="font-bold text-slate-800 text-sm flex items-center gap-2">
+              <ClipboardList size={16} className="text-orange-500" /> Active Kitchen Orders
+            </span>
+            <button
+              onClick={() => navigate("/billing/kitchen")}
+              className="text-xs font-bold text-blue-600 hover:underline cursor-pointer"
+            >
+              Open KDS →
+            </button>
+          </div>
+        }
+      >
+        <div className="space-y-3">
+          {loadingKitchen && kitchenOrders.length === 0 ? (
+            <div className="py-12 text-center text-slate-400 text-xs font-semibold">
+              Loading kitchen orders...
+            </div>
+          ) : kitchenOrders.length === 0 ? (
+            <div className="py-12 text-center text-slate-400 text-xs font-semibold">
+              No active KOT orders in kitchen
+            </div>
+          ) : (
+            [...kitchenOrders]
+              .sort((a, b) => {
+                const rank = { ready: 1, preparing: 2, pending: 3, served: 4 };
+                return (rank[a.kot_status] || 99) - (rank[b.kot_status] || 99);
+              })
+              .map((order) => (
+              <div
+                key={order.id}
+                className={`p-3.5 rounded-2xl border space-y-2.5 transition-all duration-200 ${
+                  order.kot_status === "ready"
+                    ? "bg-emerald-50/70 border-emerald-300 ring-2 ring-emerald-400/20"
+                    : order.kot_status === "served"
+                    ? "bg-slate-50/60 border-slate-200 opacity-80"
+                    : "bg-slate-50 border-slate-200/90"
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="font-black text-slate-900 text-sm">
+                    {order.kot_number ? `KOT #${order.kot_number}` : order.billing_no}
+                  </span>
+                  {order.kot_status === "pending" && (
+                    <Tag color="error" className="font-bold rounded-md">
+                      New
+                    </Tag>
+                  )}
+                  {order.kot_status === "preparing" && (
+                    <Tag color="warning" className="font-bold rounded-md animate-pulse">
+                      Cooking
+                    </Tag>
+                  )}
+                  {order.kot_status === "ready" && (
+                    <Tag color="success" className="font-bold rounded-md !flex items-center gap-1 !ml-0">
+                      <Check size={11} strokeWidth={3} /> Ready to Serve
+                    </Tag>
+                  )}
+                  {order.kot_status === "served" && (
+                    <Tag color="purple" className="font-bold rounded-md !flex items-center gap-1 !ml-0">
+                      <CheckCircle2 size={11} strokeWidth={3} /> Served
+                    </Tag>
+                  )}
+                </div>
+
+                <div className="text-xs text-slate-600 font-medium flex items-center justify-between">
+                  <span className="font-bold bg-white px-2 py-0.5 rounded-md border border-slate-200/80">
+                    {order.table_no || "Counter 1"}
+                  </span>
+                  <span>{order.items?.length || 0} items</span>
+                </div>
+
+                {/* Items summary */}
+                <div className="pt-1.5 border-t border-slate-200/60 text-xs font-semibold text-slate-700 space-y-1">
+                  {order.items?.map((it, idx) => (
+                    <div key={idx} className="flex justify-between">
+                      <span className="truncate">{it.product_name}</span>
+                      <span>× {it.quantity}</span>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Actions: Load Order + 1-Tap Served Action for Order Taker */}
+                <div className="pt-2 flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      setKotDrawerOpen(false);
+                      loadBillIntoCart(order);
+                    }}
+                    className="flex-1 py-1.5 px-2 bg-white hover:bg-slate-100 border border-slate-200 text-slate-800 rounded-lg text-xs font-bold transition cursor-pointer"
+                  >
+                    Load Order
+                  </button>
+                  {order.kot_status === "ready" && (
+                    <button
+                      onClick={() =>
+                        handleMarkOrderServed(
+                          order.id,
+                          order.kot_number ? `KOT #${order.kot_number}` : order.billing_no
+                        )
+                      }
+                      className="flex-1 py-1.5 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] !text-white rounded-lg text-xs font-bold uppercase tracking-wide flex items-center justify-center gap-1 shadow-sm shadow-emerald-500/20 cursor-pointer transition"
+                    >
+                      <Check size={14} strokeWidth={2.5} /> Mark Served
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </Drawer>
+
+      {/* ================= 7. SETTINGS MODAL ================= */}
+      <Modal
+        title={<span className="font-bold text-slate-800">POS Settings</span>}
+        open={settingsOpen}
+        onCancel={() => setSettingsOpen(false)}
+        footer={null}
+        width={380}
+      >
+        <div className="space-y-4 py-2">
+          <div>
+            <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-1.5">
+              Default Table / Counter
+            </label>
+            <Select
+              value={tableNo}
+              onChange={(val) => setTableNo(val)}
+              className="w-full text-xs font-bold"
+              style={{ height: "42px" }}
+              options={ALL_TABLES.map((t) => ({ value: t, label: t }))}
+            />
+          </div>
+
+          <div>
+            <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-1.5">
+              Order Type
+            </label>
+            <div className="grid grid-cols-3 gap-2">
+              {["Dine In", "Takeaway", "Delivery"].map((type) => (
+                <button
+                  key={type}
+                  onClick={() => setOrderType(type)}
+                  className={`py-2 rounded-xl text-xs font-bold transition ${
+                    orderType === type
+                      ? "bg-blue-600 !text-white shadow-sm"
+                      : "border border-slate-200 text-slate-700 hover:bg-slate-50"
+                  }`}
+                >
+                  {type}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+            <span className="text-xs font-bold text-slate-700">Audio Feedback Beep</span>
+            <button
+              onClick={() => setSoundEnabled((prev) => !prev)}
+              className={`p-2 rounded-xl border flex items-center gap-1.5 text-xs font-bold transition ${
+                soundEnabled
+                  ? "bg-emerald-50 text-emerald-600 border-emerald-200"
+                  : "bg-slate-50 text-slate-400 border-slate-200"
+              }`}
+            >
+              {soundEnabled ? <Volume2 size={16} /> : <VolumeX size={16} />}
+              {soundEnabled ? "Enabled" : "Muted"}
+            </button>
+          </div>
+
+          <button
+            onClick={() => setSettingsOpen(false)}
+            className="w-full py-2.5 bg-slate-900 !text-white rounded-xl text-xs font-bold hover:bg-slate-800 mt-2"
+          >
+            Save Settings
+          </button>
+        </div>
+      </Modal>
+
+      {/* ================= 8. SCAN BARCODE MODAL ================= */}
+      <Modal
+        title={<span className="font-bold text-slate-800">Scan Barcode / Product Code</span>}
+        open={scanModalOpen}
+        onCancel={() => setScanModalOpen(false)}
+        footer={null}
+        width={360}
+      >
+        <form onSubmit={handleBarcodeSubmit} className="space-y-4 py-2">
+          <p className="text-xs text-slate-500 font-medium">
+            Scan barcode or enter product SKU / code:
+          </p>
+          <input
+            type="text"
+            autoFocus
+            value={manualBarcode}
+            onChange={(e) => setManualBarcode(e.target.value)}
+            placeholder="e.g. 1001 or scan..."
+            className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+          />
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setScanModalOpen(false)}
+              className="flex-1 py-2.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-600"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="flex-1 py-2.5 rounded-xl bg-blue-600 !text-white text-xs font-bold hover:bg-blue-700"
+            >
+              Add Item
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* ================= 9. TABLE MANAGEMENT MODAL ================= */}
+      <Modal
+        title={
+          <div className="flex items-center justify-between pr-6">
+            <span className="font-bold text-slate-800 text-base flex items-center gap-2">
+              <Armchair size={18} className="text-blue-600" /> Tables & Active Orders
+            </span>
+            <Tag color={activeTablesCount > 0 ? "error" : "default"} className="font-bold">
+              {activeTablesCount} Active / {ALL_TABLES.length} Total
+            </Tag>
+          </div>
+        }
+        open={tablesModalOpen}
+        onCancel={() => setTablesModalOpen(false)}
+        footer={null}
+        width={760}
+      >
+        <div className="py-2 space-y-4">
+          <p className="text-xs text-slate-500 font-medium">
+            Select a table to start a new order, load an ongoing order, or collect payment directly.
+          </p>
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 max-h-[60vh] overflow-y-auto pr-1">
+            {ALL_TABLES.map((tbl) => {
+              const activeOrders = activeTableMap[tbl] || [];
+              const isOccupied = activeOrders.length > 0;
+              const isSelected = tableNo === tbl;
+              const primaryOrder = activeOrders[0];
+
+              return (
+                <div
+                  key={tbl}
+                  className={`p-3.5 rounded-2xl border flex flex-col justify-between transition-all select-none ${
+                    isOccupied
+                      ? primaryOrder?.kot_status === "ready"
+                        ? "bg-emerald-50/80 border-emerald-300 ring-2 ring-emerald-400/30"
+                        : primaryOrder?.kot_status === "served"
+                        ? "bg-purple-50/80 border-purple-300 ring-2 ring-purple-400/20"
+                        : primaryOrder?.kot_status === "preparing"
+                        ? "bg-amber-50/80 border-amber-300 ring-2 ring-amber-400/20"
+                        : "bg-red-50/80 border-red-300 ring-2 ring-red-400/20"
+                      : isSelected
+                      ? "bg-blue-50/70 border-blue-400 ring-2 ring-blue-400/20"
+                      : "bg-white border-slate-200 hover:border-slate-300 hover:shadow-xs"
+                  }`}
+                >
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="font-black text-sm text-slate-900 flex items-center gap-1.5">
+                        <Armchair
+                          size={15}
+                          className={
+                            isOccupied
+                              ? primaryOrder?.kot_status === "ready"
+                                ? "text-emerald-600"
+                                : primaryOrder?.kot_status === "served"
+                                ? "text-purple-600"
+                                : primaryOrder?.kot_status === "preparing"
+                                ? "text-amber-600"
+                                : "text-red-500"
+                              : "text-slate-400"
+                          }
+                        />
+                        {tbl}
+                      </span>
+                      {isOccupied ? (
+                        <Tag
+                          color={
+                            primaryOrder?.kot_status === "ready"
+                              ? "success"
+                              : primaryOrder?.kot_status === "preparing"
+                              ? "warning"
+                              : primaryOrder?.kot_status === "served"
+                              ? "purple"
+                              : "error"
+                          }
+                          className="font-bold text-[10px] m-0 rounded-md"
+                        >
+                          {primaryOrder?.kot_status === "ready"
+                            ? "Ready"
+                            : primaryOrder?.kot_status === "preparing"
+                            ? "Cooking"
+                            : primaryOrder?.kot_status === "served"
+                            ? "Served"
+                            : "New"}
+                        </Tag>
+                      ) : (
+                        <span className="text-[10px] font-bold text-slate-400">Vacant</span>
+                      )}
+                    </div>
+
+                    {isOccupied && primaryOrder && (
+                      <div className="text-[11px] text-slate-600 space-y-0.5 pt-1 border-t border-slate-200/60">
+                        <div className="font-bold text-slate-800 truncate">
+                          {primaryOrder.kot_number ? `KOT #${primaryOrder.kot_number}` : primaryOrder.billing_no}
+                        </div>
+                        <div className="truncate text-slate-500">
+                          {primaryOrder.customer_name || "Walk-in"}
+                        </div>
+                        <div className="flex justify-between items-baseline font-black text-emerald-700 pt-0.5">
+                          <span>{primaryOrder.items?.length || 0} items</span>
+                          <span className="text-xs">
+                            {fmt(
+                              primaryOrder.total_amount ||
+                              primaryOrder.items?.reduce((s, i) => {
+                                const p = parseFloat(i.unit_price || i.price || 0);
+                                const q = i.quantity || i.qty || 1;
+                                const tr = parseFloat(i.tax_percentage || i.tax_rate || 0);
+                                return s + p * q * (1 + tr / 100);
+                              }, 0)
+                            )}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="pt-3 flex flex-col gap-1.5 mt-2 border-t border-slate-100">
+                    {isOccupied && primaryOrder ? (
+                      <div className="grid grid-cols-2 gap-1.5">
+                        <button
+                          onClick={() => loadBillIntoCart(primaryOrder)}
+                          className="py-1.5 px-2 bg-white hover:bg-slate-100 border border-slate-200 text-slate-800 rounded-lg text-[11px] font-bold transition cursor-pointer"
+                        >
+                          Load Order
+                        </button>
+                        <button
+                          onClick={() => {
+                            setTablesModalOpen(false);
+                            handleOpenPayment(primaryOrder);
+                          }}
+                          className="py-1.5 px-2 bg-emerald-600 hover:bg-emerald-700 !text-white rounded-lg text-[11px] font-bold shadow-xs cursor-pointer"
+                        >
+                          Pay
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => handleSelectTable(tbl)}
+                        className={`w-full py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                          isSelected
+                            ? "bg-blue-600 !text-white"
+                            : "bg-slate-100 hover:bg-slate-200 text-slate-700"
+                        }`}
+                      >
+                        {isSelected ? "Selected" : "Start Order"}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </Modal>
+
+      {/* ================= 10. PAYMENT & SETTLEMENT MODAL ================= */}
+      <Modal
+        title={
+          <div className="flex items-center justify-between pr-6">
+            <span className="font-bold text-slate-800 text-base flex items-center gap-2">
+              <CreditCard size={18} className="text-emerald-600" /> Settle & Pay Bill
+            </span>
+            <Tag color="blue" className="font-bold">
+              {tableNo} • {loadedBillId ? (currentLoadedOrder?.kot_number ? `KOT #${currentLoadedOrder.kot_number}` : currentLoadedOrder?.billing_no) : "Counter Order"}
+            </Tag>
+          </div>
+        }
+        open={paymentModalOpen}
+        onCancel={() => setPaymentModalOpen(false)}
+        footer={null}
+        width={580}
+      >
+        <div className="space-y-4 py-1">
+          {/* Bill Total Highlight Card */}
+          <div className="bg-gradient-to-br from-emerald-600 to-teal-800 rounded-2xl p-4 text-white shadow-md flex justify-between items-center">
+            <div>
+              <p className="text-xs text-emerald-100 font-bold uppercase tracking-wider">Total Payable</p>
+              <h2 className="text-3xl font-black !text-white !mb-0 tracking-tight">
+                {fmt(Math.max(0, total - (parseFloat(discountAmount) || 0)))}
+              </h2>
+              <p className="text-xs text-emerald-100 font-medium mt-0.5">
+                {totalItemCount} items • Subtotal: {fmt(subtotal)} • Tax: {fmt(tax)}
+              </p>
+            </div>
+            {parseFloat(discountAmount) > 0 && (
+              <div className="text-right bg-white/20 px-3 py-1.5 rounded-xl backdrop-blur-xs">
+                <span className="text-[11px] block font-bold text-emerald-100">Discount</span>
+                <span className="text-sm font-black text-white">-{fmt(discountAmount)}</span>
+              </div>
+            )}
+          </div>
+
+          {/* Payment Method Selector Tabs */}
+          <div>
+            <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-2">
+              Select Payment Method
+            </label>
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+              {[
+                { key: "cash", label: "Cash", icon: <Banknote size={16} /> },
+                { key: "UPI Current Account", label: "UPI Current", icon: <QrCode size={16} /> },
+                { key: "UPI Normal Account", label: "UPI Normal", icon: <QrCode size={16} /> },
+                { key: "credit_card", label: "Card", icon: <CreditCard size={16} /> },
+                { key: "split", label: "Split Pay", icon: <Split size={16} /> },
+              ].map((m) => (
+                <button
+                  key={m.key}
+                  type="button"
+                  onClick={() => setPaymentMethod(m.key)}
+                  className={`py-2 px-2 rounded-xl border flex flex-col items-center justify-center gap-1 text-xs font-bold transition-all cursor-pointer ${
+                    paymentMethod === m.key
+                      ? "bg-emerald-600 !text-white border-emerald-600 shadow-sm shadow-emerald-500/20 scale-[1.02]"
+                      : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50"
+                  }`}
+                >
+                  <div>{m.icon}</div>
+                  <span className="text-[11px]">{m.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Method Specific Fields */}
+          {paymentMethod === "cash" && (
+            <div className="p-3.5 bg-slate-50 border border-slate-200/90 rounded-2xl space-y-3">
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1">
+                  Cash Tendered (₹)
+                </label>
+                <input
+                  type="number"
+                  value={tenderedAmount}
+                  onChange={(e) => setTenderedAmount(e.target.value)}
+                  placeholder="Enter cash received..."
+                  className="w-full h-11 px-3.5 bg-white border border-slate-200 rounded-xl text-base font-bold text-slate-900 focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              {/* Fast Cash Chips */}
+              <div className="flex flex-wrap gap-1.5">
+                {[
+                  { label: "Exact", val: Math.max(0, total - (parseFloat(discountAmount) || 0)) },
+                  { label: "₹100", val: 100 },
+                  { label: "₹200", val: 200 },
+                  { label: "₹500", val: 500 },
+                  { label: "₹1000", val: 1000 },
+                  { label: "₹2000", val: 2000 },
+                ].map((chip) => (
+                  <button
+                    key={chip.label}
+                    type="button"
+                    onClick={() => setTenderedAmount(chip.val.toString())}
+                    className="px-2.5 py-1 bg-white border border-slate-200 hover:border-emerald-500 rounded-lg text-xs font-bold text-slate-700 transition cursor-pointer"
+                  >
+                    {chip.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Return Change Pill */}
+              {parseFloat(tenderedAmount) >= Math.max(0, total - (parseFloat(discountAmount) || 0)) && (
+                <div className="p-2.5 bg-emerald-100/70 border border-emerald-300 rounded-xl flex justify-between items-center text-emerald-900">
+                  <span className="text-xs font-bold">Return Change to Customer:</span>
+                  <span className="text-base font-black">
+                    {fmt(parseFloat(tenderedAmount) - Math.max(0, total - (parseFloat(discountAmount) || 0)))}
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {(paymentMethod === "UPI Current Account" || paymentMethod === "UPI Normal Account") && (
+            <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl space-y-2.5">
+              <div className="flex items-center gap-2 text-xs font-bold text-emerald-700">
+                <QrCode size={18} />
+                <span>Scan branch UPI QR code on billing counter to receive payment.</span>
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-600 block mb-1">
+                  UPI UTR / Reference ID (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={upiTxnRef}
+                  onChange={(e) => setUpiTxnRef(e.target.value)}
+                  placeholder="e.g. 423985729182"
+                  className="w-full h-10 px-3 bg-white border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+            </div>
+          )}
+
+          {paymentMethod === "credit_card" && (
+            <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl space-y-2.5">
+              <div className="flex items-center gap-2 text-xs font-bold text-slate-700">
+                <CreditCard size={18} className="text-blue-600" />
+                <span>Swipe or tap customer card on POS EDC machine.</span>
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-600 block mb-1">
+                  Card Approval Code / Ref No (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={cardRefNo}
+                  onChange={(e) => setCardRefNo(e.target.value)}
+                  placeholder="e.g. 984512"
+                  className="w-full h-10 px-3 bg-white border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+            </div>
+          )}
+
+          {paymentMethod === "split" && (
+            <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl space-y-3">
+              <p className="text-xs font-bold text-slate-700">Split Payment Breakdown</p>
+              {splitPayments.map((sp, idx) => (
+                <div key={idx} className="flex gap-2 items-center">
+                  <Select
+                    value={sp.method}
+                    onChange={(val) => {
+                      const next = [...splitPayments];
+                      next[idx].method = val;
+                      setSplitPayments(next);
+                    }}
+                    className="w-44 text-xs font-bold"
+                    options={[
+                      { value: "cash", label: "Cash" },
+                      { value: "UPI Current Account", label: "UPI Current" },
+                      { value: "UPI Normal Account", label: "UPI Normal" },
+                      { value: "credit_card", label: "Card" },
+                    ]}
+                  />
+                  <input
+                    type="number"
+                    value={sp.amount}
+                    onChange={(e) => {
+                      const next = [...splitPayments];
+                      next[idx].amount = parseFloat(e.target.value) || 0;
+                      setSplitPayments(next);
+                    }}
+                    placeholder="Amount"
+                    className="flex-1 h-9 px-3 bg-white border border-slate-200 rounded-lg text-xs font-bold"
+                  />
+                  {splitPayments.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => setSplitPayments(splitPayments.filter((_, i) => i !== idx))}
+                      className="text-red-500 p-1 hover:bg-red-50 rounded"
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  )}
+                </div>
+              ))}
+              <div className="flex justify-between items-center pt-2 border-t border-slate-200 text-xs font-bold">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setSplitPayments([...splitPayments, { method: "cash", amount: 0 }])
+                  }
+                  className="text-blue-600 hover:underline"
+                >
+                  + Add Split Row
+                </button>
+                <span>
+                  Split Total: {fmt(splitPayments.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0))} /{" "}
+                  {fmt(Math.max(0, total - (parseFloat(discountAmount) || 0)))}
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* Discount Field */}
+          <div className="flex gap-3 items-center pt-1">
+            <label className="text-xs font-bold text-slate-600 whitespace-nowrap">
+              Discount (₹):
+            </label>
+            <input
+              type="number"
+              value={discountAmount}
+              onChange={(e) => setDiscountAmount(parseFloat(e.target.value) || 0)}
+              min={0}
+              max={total}
+              placeholder="0"
+              className="w-32 h-9 px-3 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-800"
+            />
+          </div>
+
+          {/* Settlement Action Buttons */}
+          <div className="pt-3 border-t border-slate-200 flex gap-2.5">
+            <button
+              type="button"
+              onClick={() => setPaymentModalOpen(false)}
+              className="px-4 py-3 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50 cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => handleConfirmSettlement(false)}
+              disabled={settlingPayment}
+              className="flex-1 py-3 bg-slate-800 hover:bg-slate-900 !text-white rounded-xl text-xs font-bold shadow-sm cursor-pointer disabled:opacity-50"
+            >
+              {settlingPayment ? "Settling..." : "Pay (No Print)"}
+            </button>
+            <button
+              type="button"
+              onClick={() => handleConfirmSettlement(true)}
+              disabled={settlingPayment}
+              className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 !text-white rounded-xl text-xs font-black uppercase tracking-wide flex items-center justify-center gap-1.5 shadow-md shadow-emerald-500/25 cursor-pointer disabled:opacity-50"
+            >
+              <Printer size={16} />
+              <span>{settlingPayment ? "Processing..." : "Pay & Print Receipt"}</span>
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* ================= 11. SETTLEMENT SUCCESS MODAL ================= */}
+      {settledSuccessData && (
+        <Modal
+          title={null}
+          open={Boolean(settledSuccessData)}
+          onCancel={() => setSettledSuccessData(null)}
+          footer={null}
+          width={420}
+        >
+          <div className="py-4 text-center space-y-4">
+            <div className="w-16 h-16 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto shadow-sm">
+              <CheckCircle2 size={36} />
+            </div>
+            <div>
+              <h3 className="text-lg font-black text-slate-900">Bill Settled Successfully!</h3>
+              <p className="text-xs text-slate-500 mt-1">
+                {settledSuccessData.billing_no || "Bill Completed"} • Table: {settledSuccessData.counter_no || tableNo}
+              </p>
+              <p className="text-2xl font-black text-emerald-600 mt-2">
+                {fmt(settledSuccessData.total_amount)}
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2 pt-2">
+              <button
+                onClick={() => {
+                  if (settledSuccessData.id) {
+                    window.open(`/billing/customer-copy/${settledSuccessData.id}`, "_blank");
+                  }
+                }}
+                className="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-700 !text-white text-xs font-bold flex items-center justify-center gap-2 shadow-sm cursor-pointer"
+              >
+                <Printer size={16} /> View & Print Receipt
+              </button>
+              <button
+                onClick={() => setSettledSuccessData(null)}
+                className="w-full py-2.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-700 hover:bg-slate-50 cursor-pointer"
+              >
+                Start Next Order
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
