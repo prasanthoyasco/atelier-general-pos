@@ -20,7 +20,8 @@ import {
   Receipt,
   IndianRupee,
   Megaphone,
-  MessageCircle
+  MessageCircle,
+  Sparkles
 } from "lucide-react";
 import { Popover, Tooltip } from "antd";
 import { FaWhatsapp } from "react-icons/fa";
@@ -53,7 +54,14 @@ const PanelLeftIcon = ({ size = 20, className = "" }) => (
  * - Settings button is placed at the bottom and becomes active on the /settings route.
  */
 
-const Sidebar = ({ collapsed = true, setCollapsed = () => { }, selectedParent, setSelectedParent, menuItems: propMenuItems }) => {
+const Sidebar = ({
+  collapsed = true,
+  setCollapsed = () => { },
+  selectedParent,
+  setSelectedParent,
+  menuItems: propMenuItems,
+  onNavigate,
+}) => {
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const { theme, primaryColor, sidebarBgColor } = useTheme();
@@ -108,6 +116,7 @@ const Sidebar = ({ collapsed = true, setCollapsed = () => { }, selectedParent, s
       children: [
         { key: "/product/list", label: "Product List", icon: <List size={18} /> },
         { key: "/product/add", label: "Add Product", icon: <PlusCircle size={18} /> },
+        { key: "/product/addons", label: "Add-ons", icon: <Sparkles size={18} /> },
         { key: "/category/list", label: "Category List", icon: <List size={18} /> },
         { key: "/category/add", label: "Add Category", icon: <PlusCircle size={18} /> },
         { key: "/subcategory/list", label: "Subcategory List", icon: <List size={18} /> },
@@ -202,7 +211,7 @@ const Sidebar = ({ collapsed = true, setCollapsed = () => { }, selectedParent, s
                     navigate(child.key);
                   }
                   setOpenMenu(null);
-                  if (isMobile) setCollapsed(false);
+                  onNavigate?.();
                 }}
                 role="button"
                 tabIndex={0}
@@ -252,7 +261,7 @@ const Sidebar = ({ collapsed = true, setCollapsed = () => { }, selectedParent, s
           open={openMenu === item.key}
           onOpenChange={(visible) => setOpenMenu(visible ? item.key : null)}
           getPopupContainer={() => containerRef.current || document.body} // render inside sidebar container
-          destroyTooltipOnHide
+          destroyOnHidden
           overlayStyle={{ zIndex: 3000, paddingLeft: 10 }}
         >
           <div
@@ -297,7 +306,7 @@ const Sidebar = ({ collapsed = true, setCollapsed = () => { }, selectedParent, s
             if (!item.noRoute) {
               navigate(item.key);
             }
-            if (isMobile) setCollapsed(false);
+            onNavigate?.();
             setOpenMenu(null);
           }
         }}
@@ -346,67 +355,18 @@ const Sidebar = ({ collapsed = true, setCollapsed = () => { }, selectedParent, s
   const settingsActive = pathname === "/settings" || pathname.startsWith("/settings/");
 
   return (
-    <>
-      {/* Mobile Hamburger / Close */}
-      {isMobile && (
-        <div
-          style={{
-            position: "fixed",
-            top: 12,
-            left: 12,
-            zIndex: 2100,
-            cursor: "pointer",
-            background: "#fff",
-            borderRadius: "50%",
-            padding: 8,
-            boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
-          }}
-          onClick={() => setCollapsed((prev) => !prev)}
-        >
-          {collapsed ? <X size={20} /> : <Menu size={20} />}
-        </div>
-      )}
-
-      <AnimatePresence initial={false}>
-        {(isMobile ? collapsed : true) && (
-          <div ref={containerRef} style={{ height: "100%" }}>
-            {isMobile && collapsed && (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 0.5 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.3 }}
-                style={{
-                  position: "fixed",
-                  top: 0,
-                  left: 0,
-                  width: "100%",
-                  height: "100%",
-                  background: "black",
-                  zIndex: 1500,
-                }}
-                onClick={() => setCollapsed(false)}
-              />
-            )}
-
-            <motion.div
-              initial={{ x: isMobile ? -300 : 0, opacity: 0 }}
-              animate={{ x: 0, opacity: 1 }}
-              exit={{ x: isMobile ? -300 : 0, opacity: 0 }}
-              transition={{ duration: 0.3 }}
-              style={{
-                height: "100%",
-                width: collapsed && !isMobile ? 80 : isMobile ? 260 : 260, // Increased width for better spacing
-                backgroundColor: theme === "dark" ? "#fcfcfcff" : sidebarBgColor,
-                borderRight: theme === "dark" ? "1px solid #ffffffff" : "1px solid #e5e7eb",
-                display: "flex",
-                flexDirection: "column",
-                position: isMobile ? "fixed" : "relative",
-                top: 0,
-                left: 0,
-                zIndex: 1601,
-              }}
-            >
+    <div ref={containerRef} style={{ height: "100%", width: "100%", display: "flex", flexDirection: "column" }}>
+      <div
+        style={{
+          height: "100%",
+          width: "100%",
+          backgroundColor: theme === "dark" ? "#001529" : sidebarBgColor,
+          borderRight: theme === "dark" ? "1px solid rgba(255,255,255,0.08)" : "1px solid #e5e7eb",
+          display: "flex",
+          flexDirection: "column",
+          position: "relative",
+        }}
+      >
               {/* Top (Logo / Sidebar Toggle) */}
               <div
                 style={{
@@ -488,9 +448,9 @@ const Sidebar = ({ collapsed = true, setCollapsed = () => { }, selectedParent, s
                     style={{
                       display: "flex",
                       alignItems: "center",
-                      justifyContent: (!collapsed && !isMobile) ? "space-between" : "center",
+                      justifyContent: isMobile ? "space-between" : (!collapsed ? "space-between" : "center"),
                       width: "100%",
-                      padding: (!collapsed && !isMobile) ? "0 12px 0 16px" : "0 24px",
+                      padding: isMobile ? "0 16px" : (!collapsed ? "0 12px 0 16px" : "0 24px"),
                     }}
                   >
                     <img
@@ -498,9 +458,9 @@ const Sidebar = ({ collapsed = true, setCollapsed = () => { }, selectedParent, s
                       alt="DUCH CLOTHING"
                       className="transition-all duration-300 hover:scale-102"
                       style={{
-                        height: 56,
+                        height: 52,
                         width: "auto",
-                        maxWidth: (!collapsed && !isMobile) ? 160 : 200,
+                        maxWidth: isMobile ? 180 : (!collapsed ? 160 : 200),
                         cursor: "pointer",
                         background: "#fff",
                         borderRadius: 8,
@@ -539,6 +499,16 @@ const Sidebar = ({ collapsed = true, setCollapsed = () => { }, selectedParent, s
                         </button>
                       </Tooltip>
                     )}
+
+                    {isMobile && onNavigate && (
+                      <button
+                        onClick={onNavigate}
+                        className="w-10 h-10 rounded-xl text-slate-500 hover:text-slate-800 hover:bg-slate-100 active:scale-95 transition-all cursor-pointer flex items-center justify-center shrink-0"
+                        aria-label="Close menu"
+                      >
+                        <X size={20} />
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
@@ -570,7 +540,7 @@ const Sidebar = ({ collapsed = true, setCollapsed = () => { }, selectedParent, s
                                     navigate(child.key);
                                   }
                                   setOpenMenu(item.key); // keep parent open / active in inline mode
-                                  if (isMobile) setCollapsed(false);
+                                  onNavigate?.();
                                 }}
                                 className="transition-all duration-200"
                                 style={{
@@ -608,7 +578,7 @@ const Sidebar = ({ collapsed = true, setCollapsed = () => { }, selectedParent, s
                 <div
                   onClick={() => {
                     navigate("/settings");
-                    if (isMobile) setCollapsed(false);
+                    onNavigate?.();
                   }}
                   role="button"
                   tabIndex={0}
@@ -628,11 +598,8 @@ const Sidebar = ({ collapsed = true, setCollapsed = () => { }, selectedParent, s
                   {(!collapsed || isMobile) && <span style={{ marginLeft: 12, fontWeight: 500 }}>Settings</span>}
                 </div>
               </Tooltip>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-    </>
+        </div>
+      </div>
   );
 };
 

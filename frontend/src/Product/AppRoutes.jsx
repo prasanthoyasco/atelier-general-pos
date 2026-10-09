@@ -6,13 +6,19 @@ import CategoryList from "./pages/CategoryList";
 import CategoryAdd from "./pages/CategoryAdd";
 import SubcategoryList from "./pages/SubcategoryList";
 import SubcategoryForm from "./pages/SubcategoryForm";
-import { List, Tags, Layers, Upload } from "lucide-react";
+import AddonList from "./pages/AddonList";
+import { List, Tags, Layers, Upload, Sparkles } from "lucide-react";
 
 export const ProductMenuItems = [
   {
     key: "/Product/list",
     label: "Products",
     icon: <List size={18} />,
+  },
+  {
+    key: "/Product/addons",
+    label: "Add-ons",
+    icon: <Sparkles size={18} />,
   },
   {
     key: "/Product/bulk-upload",
@@ -37,6 +43,7 @@ const ProductRoutes = () => {
       <Route path="list" element={<ProductList />} />
       <Route path="add" element={<ProductForm />} />
       <Route path="edit/:id" element={<ProductForm />} />
+      <Route path="addons" element={<AddonList />} />
       <Route path="bulk-upload" element={<ProductBulkUpload />} />
 
       <Route path="categories" element={<CategoryList />} />

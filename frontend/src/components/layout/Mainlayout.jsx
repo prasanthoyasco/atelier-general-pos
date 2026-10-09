@@ -12,6 +12,7 @@ import {
 import { Outlet } from "react-router-dom";
 import Sidebar from "./Sidebar";
 import HeaderBar from "./Header";
+import MobileBottomNav from "./MobileBottomNav";
 import {
   SettingOutlined,
   CheckOutlined,
@@ -21,6 +22,7 @@ import {
 import { SketchPicker } from "react-color";
 import { useTheme } from "../../context/ThemeContext";
 import AppFooter from "./Footer";
+import KOTWaiterNotifier from "../../billing/components/KOTWaiterNotifier.jsx";
 
 const { Sider, Content } = Layout;
 const { TabPane } = Tabs;
@@ -31,7 +33,14 @@ const MainLayout = ({ menuItems }) => {
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [activeColorPicker, setActiveColorPicker] = useState(null);
   const [selectedParent, setSelectedParent] = useState(null);
-  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
+  const [windowWidth, setWindowWidth] = useState(
+    typeof window !== "undefined" ? window.innerWidth : 1200
+  );
+
+  const isMobile = windowWidth < 768;
+  const isTablet = windowWidth >= 768 && windowWidth < 1024;
+  const isDesktop = windowWidth >= 1024;
 
   const {
     theme,
@@ -120,7 +129,7 @@ const MainLayout = ({ menuItems }) => {
 
   // Handle screen resize
   useEffect(() => {
-    const handleResize = () => setIsMobile(window.innerWidth < 768);
+    const handleResize = () => setWindowWidth(window.innerWidth);
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
   }, []);
@@ -159,21 +168,21 @@ const MainLayout = ({ menuItems }) => {
         },
       }}
     >
+      <KOTWaiterNotifier />
       <Layout
         className="min-h-screen"
         style={{
-          maxWidth: layoutType === "boxed" ? "1200px" : "100%",
-          margin: layoutType === "boxed" ? "0 auto" : 0,
+          backgroundColor: contentBgColor,
         }}
       >
-        {/* Desktop Sidebar */}
+        {/* Desktop & Tablet Navigation Rail */}
         {!isMobile && (
           <Sider
             trigger={null}
             collapsible
-            collapsed={collapsed}
-            width={260}
-            collapsedWidth={80}
+            collapsed={isTablet ? true : collapsed}
+            width={isTablet ? 68 : 260}
+            collapsedWidth={isTablet ? 68 : 80}
             theme={theme}
             style={{
               position: "fixed",
@@ -185,34 +194,37 @@ const MainLayout = ({ menuItems }) => {
             }}
           >
             <Sidebar
-              collapsed={collapsed}
+              collapsed={isTablet ? true : collapsed}
               setCollapsed={setCollapsed}
               menuItems={menuItemsToUse}
-              selectedParent={selectedParent}
+              selectedParent={isTablet ? null : selectedParent}
               setSelectedParent={setSelectedParent}
             />
           </Sider>
         )}
 
-        {/* Mobile Sidebar in Drawer */}
+        {/* Mobile Navigation Drawer */}
         {isMobile && (
           <Drawer
             placement="left"
-            closable
-            onClose={() => setCollapsed(false)}
-            open={collapsed}
-            width="100%"
-            bodyStyle={{
-              padding: 0,
-              backgroundColor: theme === "dark" ? "#001529" : sidebarBgColor,
+            closable={false}
+            onClose={() => setMobileDrawerOpen(false)}
+            open={mobileDrawerOpen}
+            width={Math.min(320, Math.floor(windowWidth * 0.85))}
+            styles={{
+              body: {
+                padding: 0,
+                backgroundColor: theme === "dark" ? "#001529" : sidebarBgColor,
+              },
             }}
           >
             <Sidebar
-              collapsed={collapsed}
-              setCollapsed={setCollapsed}
+              collapsed={false}
+              setCollapsed={() => {}}
               menuItems={menuItemsToUse}
               selectedParent={selectedParent}
               setSelectedParent={setSelectedParent}
+              onNavigate={() => setMobileDrawerOpen(false)}
             />
           </Drawer>
         )}
@@ -222,41 +234,65 @@ const MainLayout = ({ menuItems }) => {
           style={{
             marginLeft: isMobile
               ? 0
-              : selectedParent
-                ? collapsed
-                  ? 250
-                  : 460
-                : collapsed
-                  ? 80
-                  : 260,
+              : isTablet
+                ? 68
+                : selectedParent
+                  ? collapsed
+                    ? 250
+                    : 460
+                  : collapsed
+                    ? 80
+                    : 260,
             transition: "margin-left 0.3s",
             backgroundColor: contentBgColor,
+            minHeight: "100vh",
+            minWidth: 0,
           }}
         >
-          {/* Header (logo moved to header) */}
-          <HeaderBar collapsed={collapsed} setCollapsed={setCollapsed} />
-
+          {/* Header */}
+          <HeaderBar
+            collapsed={collapsed}
+            setCollapsed={setCollapsed}
+            mobileDrawerOpen={mobileDrawerOpen}
+            onToggleMobileMenu={() => setMobileDrawerOpen((prev) => !prev)}
+            isMobile={isMobile}
+            isTablet={isTablet}
+          />
 
           <Content
             style={{
-              padding: "8px",
+              padding: isMobile ? "10px" : "12px",
+              paddingBottom: isMobile ? "88px" : "12px",
               backgroundColor: contentBgColor,
               minHeight: "calc(100vh - 112px)",
-              overflow: "auto",
+              overflowY: "auto",
               position: "relative",
             }}
             onClick={handleContentClick}
           >
             <div
               className="min-h-full transition-all duration-300 ease-in-out"
+              style={{
+                maxWidth: layoutType === "boxed" ? "1200px" : "100%",
+                margin: layoutType === "boxed" ? "0 auto" : 0,
+              }}
             >
               <Outlet />
             </div>
           </Content>
-          <AppFooter
-            theme={theme}
-            bgColor={theme === "dark" ? "#001529" : footerBgColor}
-          />
+
+          {/* Desktop & Tablet Footer */}
+          {!isMobile && (
+            <AppFooter
+              theme={theme}
+              bgColor={theme === "dark" ? "#001529" : footerBgColor}
+            />
+          )}
+
+          {/* Google M3 Mobile Bottom Navigation Dock */}
+          {isMobile && (
+            <MobileBottomNav onOpenMenu={() => setMobileDrawerOpen(true)} />
+          )}
         </Layout>
       </Layout>
 

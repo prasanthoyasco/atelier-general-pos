@@ -32,6 +32,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import productService from "../services/productService";
 import categoryService from "../services/categoryService";
 import subcategoryService from "../services/subcategoryService";
+import addonService from "../services/addonService";
 
 const { TextArea } = Input;
 const { Option } = Select;
@@ -258,6 +259,18 @@ const ProductForm = () => {
     }
   };
 
+  // Fetch available addons
+  const [availableAddons, setAvailableAddons] = useState([]);
+  const fetchAddons = async () => {
+    try {
+      const res = await addonService.getAll({ active_only: true });
+      const result = res.data?.data || res.data || [];
+      setAvailableAddons(Array.isArray(result) ? result : []);
+    } catch (err) {
+      console.error("Addons fetch error:", err);
+    }
+  };
+
   // Fetch subcategories for category
   const handleCategoryChange = async (categoryId) => {
     form.setFieldsValue({ sub_category_id: undefined });
@@ -310,6 +323,7 @@ const ProductForm = () => {
         sku: data.sku,
         image_url: data.image_url,
         status: data.status || "active",
+        addon_ids: Array.isArray(data.addons) ? data.addons.map((a) => a.id) : [],
       });
     } catch (err) {
       console.error("Product fetch error:", err);
@@ -322,6 +336,7 @@ const ProductForm = () => {
   useEffect(() => {
     fetchCategories();
     fetchKitchens();
+    fetchAddons();
   }, []);
 
   useEffect(() => {
@@ -362,6 +377,8 @@ const ProductForm = () => {
       product_name: trim(values.product_name ?? ""),
       category_id: values.category_id != null ? String(values.category_id) : "",
       sub_category_id: values.sub_category_id != null ? String(values.sub_category_id) : undefined,
+      kitchen_id: values.kitchen_id ? String(values.kitchen_id) : undefined,
+      addon_ids: Array.isArray(values.addon_ids) ? values.addon_ids : [],
       brand: trim(values.brand ?? "") || undefined,
       portion_size: trim(values.portion_size ?? "") || undefined,
       dietary_preference: values.dietary_preference || undefined,
@@ -633,6 +650,29 @@ const ProductForm = () => {
                   </Select>
                 </Form.Item>
               </Col>
+
+              <Col xs={24} sm={12}>
+                <Form.Item 
+                  label="Available Add-ons / Customizations" 
+                  name="addon_ids"
+                  help="Add-ons customers can select for this item in POS."
+                >
+                  <Select
+                    mode="multiple"
+                    placeholder="Select available add-ons (optional)"
+                    allowClear
+                    showSearch
+                    size="large"
+                    optionFilterProp="children"
+                  >
+                    {availableAddons.map((addon) => (
+                      <Option key={addon.id} value={addon.id}>
+                        {addon.addon_name} (+₹{parseFloat(addon.price || 0).toFixed(2)})
+                      </Option>
+                    ))}
+                  </Select>
+                </Form.Item>
+              </Col>
             </Row>
           </Card>
         );
@@ -832,19 +872,39 @@ const ProductForm = () => {
   };
 
   return (
-    <div style={{ padding: 12, background: "#f0f2f5", minHeight: "100vh" }}>
+    <div className="p-3 sm:p-4 lg:p-6 bg-[#f0f2f5] min-h-screen pb-44 md:pb-6">
       {contextHolder}
       <Spin spinning={loading}>
         <div style={{ maxWidth: 1200, margin: "0 auto" }}>
-          <Card className="rounded-2xl shadow-sm border border-slate-200">
+          <Card className="rounded-2xl shadow-sm border border-slate-200 p-2 sm:p-4">
             <Row gutter={24}>
               <Col xs={24} md={6}>
-                <Steps direction={screens.md ? "vertical" : "horizontal"} current={current} onChange={(idx) => setCurrent(idx)} className="mb-6 md:mb-0">
-                  <Step title={<StepIcon index={0} title="Basic" />} description={screens.md ? "Product info" : ""} />
-                  <Step title={<StepIcon index={1} title="Attributes" />} description={screens.md ? "Important details" : ""} />
-                  <Step title={<StepIcon index={2} title="Pricing" />} description={screens.md ? "Price & image" : ""} />
-                  <Step title={<StepIcon index={3} title="Details" />} description={screens.md ? "Description" : ""} />
-                </Steps>
+                {!screens.md ? (
+                  <div className="mb-4 bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
+                    <div className="flex items-center justify-between text-xs font-bold text-slate-700 mb-2">
+                      <span>Step {current + 1} of 4: {["Basic Info", "Attributes", "Pricing & Image", "Details"][current]}</span>
+                      <span className="text-indigo-600 font-black">{Math.round(((current + 1) / 4) * 100)}%</span>
+                    </div>
+                    <div className="grid grid-cols-4 gap-1.5">
+                      {[0, 1, 2, 3].map((stepIdx) => (
+                        <div
+                          key={stepIdx}
+                          onClick={() => setCurrent(stepIdx)}
+                          className={`h-2 rounded-full cursor-pointer transition-all ${
+                            stepIdx <= current ? "bg-indigo-600" : "bg-slate-200"
+                          }`}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <Steps direction="vertical" current={current} onChange={(idx) => setCurrent(idx)}>
+                    <Step title={<StepIcon index={0} title="Basic" />} description="Product info" />
+                    <Step title={<StepIcon index={1} title="Attributes" />} description="Important details" />
+                    <Step title={<StepIcon index={2} title="Pricing" />} description="Price & image" />
+                    <Step title={<StepIcon index={3} title="Details" />} description="Description" />
+                  </Steps>
+                )}
               </Col>
 
               <Col xs={24} md={18}>
@@ -871,18 +931,27 @@ const ProductForm = () => {
                   {renderStepContent(current)}
                 </Form>
 
-                <div style={{ marginTop: 24, display: "flex", justifyContent: "space-between" }}>
+                <div className="fixed bottom-[calc(58px+env(safe-area-inset-bottom,0px))] left-0 right-0 p-3 bg-white/95 backdrop-blur-md border-t border-slate-200 shadow-[0_-4px_16px_rgba(0,0,0,0.08)] z-40 md:static md:bottom-auto md:p-0 md:bg-transparent md:border-0 md:shadow-none md:mt-6 flex items-center justify-between">
                   <div>
                     {current > 0 && (
-                      <Button icon={<LeftOutlined />} onClick={prev}>
+                      <Button 
+                        icon={<LeftOutlined />} 
+                        onClick={prev}
+                        className="min-h-[44px] px-5 rounded-xl font-bold cursor-pointer"
+                      >
                         Back
                       </Button>
                     )}
                   </div>
 
-                  <div>
+                  <div className="flex gap-2">
                     {current < STEP_COLORS.length - 1 && (
-                      <Button type="primary" onClick={next} icon={<RightOutlined />}>
+                      <Button 
+                        type="primary" 
+                        onClick={next} 
+                        icon={<RightOutlined />}
+                        className="min-h-[44px] px-6 rounded-xl font-bold bg-indigo-600 hover:bg-indigo-700 cursor-pointer shadow-md shadow-indigo-500/20"
+                      >
                         Next
                       </Button>
                     )}
@@ -893,6 +962,7 @@ const ProductForm = () => {
                         onClick={handleSubmit}
                         icon={<CheckCircleTwoTone twoToneColor="#52c41a" />}
                         loading={loading}
+                        className="min-h-[44px] px-6 rounded-xl font-bold bg-emerald-600 hover:bg-emerald-700 cursor-pointer shadow-md shadow-emerald-500/20"
                       >
                         {routeId ? "Update Product" : "Create Product"}
                       </Button>

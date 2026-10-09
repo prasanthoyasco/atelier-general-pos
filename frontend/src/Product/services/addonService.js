@@ -6,9 +6,9 @@ const getBranchId = () => {
 };
 
 const addonService = {
-  async getAll() {
+  async getAll(params = {}) {
     const branchId = getBranchId();
-    return await api.get("/product/addons", { params: { branch_id: branchId } });
+    return await api.get("/product/addons", { params: { branch_id: branchId, ...params } });
   },
   async create(data) {
     const branchId = getBranchId();

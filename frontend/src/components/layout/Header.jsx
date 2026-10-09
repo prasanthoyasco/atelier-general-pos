@@ -18,17 +18,26 @@ import BranchSelector from "../BranchSelector";
 import { Receipt, ReceiptText } from "lucide-react";
 import { FaCartPlus } from "react-icons/fa";
 
-const HeaderBar = ({ collapsed, setCollapsed }) => {
+const HeaderBar = ({
+  collapsed,
+  setCollapsed,
+  mobileDrawerOpen,
+  onToggleMobileMenu,
+  isMobile: propIsMobile,
+  isTablet: propIsTablet,
+}) => {
   const { theme, headerBgColor, headerGradient } = useTheme();
   const { user } = useAuth();
   const navigate = useNavigate();
-  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  const [internalIsMobile, setInternalIsMobile] = useState(window.innerWidth < 768);
 
   useEffect(() => {
-    const handleResize = () => setIsMobile(window.innerWidth < 768);
+    const handleResize = () => setInternalIsMobile(window.innerWidth < 768);
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
   }, []);
+
+  const isMobile = propIsMobile !== undefined ? propIsMobile : internalIsMobile;
 
   const handleMenuClick = ({ key }) => {
     if (key === "logout") {
@@ -39,25 +48,23 @@ const HeaderBar = ({ collapsed, setCollapsed }) => {
     }
   };
 
-  // user menu (AntD Menu)
-  const userMenu = (
-    <Menu
-      items={[
-        {
-          key: "profile",
-          icon: <UserOutlined />,
-          label: "Profile",
-        },
-        {
-          key: "logout",
-          icon: <LogoutOutlined />,
-          label: "Logout",
-          danger: true,
-        },
-      ]}
-      onClick={handleMenuClick}
-    />
-  );
+  // user menu items for AntD Dropdown
+  const userMenuConfig = {
+    items: [
+      {
+        key: "profile",
+        icon: <UserOutlined />,
+        label: "Profile",
+      },
+      {
+        key: "logout",
+        icon: <LogoutOutlined />,
+        label: "Logout",
+        danger: true,
+      },
+    ],
+    onClick: handleMenuClick,
+  };
 
   // Dummy recent bills for notifications
   const recentBills = [
@@ -104,10 +111,10 @@ const HeaderBar = ({ collapsed, setCollapsed }) => {
 
   return (
     <div
-      className="flex justify-between items-center px-6 py-2 transition-all duration-300"
+      className="flex justify-between items-center px-3 sm:px-6 py-2 transition-all duration-300"
       style={{
         ...headerStyle,
-        height: 64,
+        height: isMobile ? 54 : 64,
         position: "sticky",
         top: 0,
         zIndex: 1000,
@@ -115,32 +122,47 @@ const HeaderBar = ({ collapsed, setCollapsed }) => {
         borderBottom: theme === "dark" ? "1px solid #374151" : "1px solid #f3f4f6",
       }}
     >
-      {/* Left side: Collapse Button */}
+      {/* Left side: Hamburger Trigger */}
       {isMobile ? (
-        <div
-          className="cursor-pointer p-2 rounded-lg hover:bg-gray-100  transition-colors"
-          onClick={() => setCollapsed(!collapsed)}
+        <button
+          type="button"
+          aria-label="Toggle navigation menu"
+          className="cursor-pointer min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl hover:bg-slate-100/80 active:scale-95 transition-all"
+          onClick={onToggleMobileMenu || (() => setCollapsed(!collapsed))}
           style={{ color: textColor }}
         >
-          {collapsed ? (
-            <MenuUnfoldOutlined style={{ fontSize: 20 }} />
-          ) : (
+          {mobileDrawerOpen ? (
             <MenuFoldOutlined style={{ fontSize: 20 }} />
+          ) : (
+            <MenuUnfoldOutlined style={{ fontSize: 20 }} />
           )}
-        </div>
+        </button>
+      ) : propIsTablet ? (
+        <button
+          type="button"
+          aria-label="Toggle navigation rail"
+          className="cursor-pointer min-w-[40px] min-h-[40px] flex items-center justify-center rounded-xl hover:bg-slate-100/80 active:scale-95 transition-all text-slate-600"
+          onClick={() => setCollapsed(!collapsed)}
+        >
+          {collapsed ? (
+            <MenuUnfoldOutlined style={{ fontSize: 18 }} />
+          ) : (
+            <MenuFoldOutlined style={{ fontSize: 18 }} />
+          )}
+        </button>
       ) : (
         <div />
       )}
 
-      {/* Right side: notifications + user */}
-      <div className="flex items-center gap-2 sm:gap-6">
+      {/* Right side: POS button + branch + user */}
+      <div className="flex items-center gap-1.5 sm:gap-4">
         {/* POS Button */}
         <button
           onClick={() => navigate("/billing/pos")}
-          className="flex items-center gap-1.5 bg-[#506EE4] !text-white px-2 py-1.5 rounded-full text-xs font-semibold shadow-sm hover:bg-[#3f56c2] transition-all duration-200 active:scale-95 sm:text-sm sm:px-3.5 sm:py-2"
+          className="flex items-center gap-1.5 bg-[#4F46E5] hover:bg-[#4338CA] !text-white px-2.5 py-1.5 sm:px-3.5 sm:py-2 rounded-full text-xs font-bold shadow-xs hover:shadow transition-all duration-200 active:scale-95 sm:text-sm cursor-pointer"
         >
-          <FaCartPlus size={isMobile ? 12 : 14} />
-          <span>{isMobile ? "POS" : "POS"}</span>
+          <FaCartPlus size={isMobile ? 13 : 15} />
+          <span>POS</span>
         </button>
 
         {/* Branch Selector */}
@@ -171,7 +193,7 @@ const HeaderBar = ({ collapsed, setCollapsed }) => {
         </Popover> */}
 
         {/* User dropdown */}
-        <Dropdown overlay={userMenu} placement="bottomRight" trigger={["click"]}>
+        <Dropdown menu={userMenuConfig} placement="bottomRight" trigger={["click"]}>
           <div
             className="cursor-pointer flex items-center gap-3 p-1 pr-3 rounded-full border border-transparent hover:border-gray-200 transition-all duration-200"
             style={{

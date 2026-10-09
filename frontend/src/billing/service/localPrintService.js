@@ -128,6 +128,10 @@ export const buildEscPosReceipt = (billing) => {
     const name = clean(itemName(item)).slice(0, 24).padEnd(24, " ");
     const qtyText = `${qty} Nos`.padStart(7, " ");
     lines.push(`${name}${qtyText}${rate.toFixed(2).padStart(8, " ")}${amount.toFixed(2).padStart(9, " ")}`);
+    if (Array.isArray(item.addons) && item.addons.length > 0) {
+      const addonText = item.addons.map((a) => `+ ${a.addon_name || a.name || "Addon"}`).join(", ");
+      lines.push(`  ${clean(addonText).slice(0, lineWidth - 2)}`);
+    }
     if (itemCode(item)) lines.push(clean(itemCode(item)).slice(0, lineWidth));
   }
 

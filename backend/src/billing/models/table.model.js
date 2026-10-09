@@ -11,11 +11,11 @@ const Table = sequelize.define(
       autoIncrement: true,
     },
     branch_id: {
-      type: DataTypes.INTEGER,
+      type: DataTypes.UUID,
       allowNull: false,
       references: {
         model: Branch,
-        key: "branch_id",
+        key: "id",
       },
     },
     table_no: {

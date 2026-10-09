@@ -112,6 +112,7 @@ const billingService = {
           tax: item.tax_amount || item.tax || 0,
           total_price: item.total_price || (quantity * unitPrice + (item.tax_amount || 0) - (item.discount_amount || 0)),
           barcode: item.barcode,
+          addons: item.addons || null,
           needsKOT: productNeedsKOT,
           kitchen_id: pKitchenId,
           kitchen_name: pKitchenName
@@ -595,6 +596,7 @@ const billingService = {
             size: item.size || null,
             color: item.color || null,
             barcode: item.barcode || null,
+            addons: item.addons || null,
           });
 
           // Update stock with new quantities - Allow negative stock
@@ -781,6 +783,7 @@ const billingService = {
             size: item.size,
             color: item.color,
             barcode: item.barcode || item.product?.product_code,
+            addons: item.addons || [],
             product: item.product ? {
               id: item.product.id,
               product_name: item.product.product_name,
@@ -875,6 +878,7 @@ const billingService = {
             size: item.size,
             color: item.color,
             barcode: item.barcode || item.product?.product_code,
+            addons: item.addons || [],
           };
         });
 

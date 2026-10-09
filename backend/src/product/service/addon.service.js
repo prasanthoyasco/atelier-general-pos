@@ -4,10 +4,13 @@ const addonService = {
   async create(data) {
     return await Addon.create(data);
   },
-  async getAll(branchId) {
+  async getAll(branchId, query = {}) {
     const where = {};
     if (branchId) where.branch_id = branchId;
-    return await Addon.findAll({ where });
+    if (query.active_only === 'true' || query.active_only === true) {
+      where.is_active = true;
+    }
+    return await Addon.findAll({ where, order: [['createdAt', 'DESC']] });
   },
   async getById(id, branchId) {
     const where = { id };

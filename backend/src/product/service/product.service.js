@@ -2,34 +2,43 @@
 import Product from "../models/product.model.js";
 import Category from "../models/category.model.js";
 import Subcategory from "../models/subcategory.models.js";
+import Addon from "../models/addon.model.js";
 import { Op } from "sequelize";
 import { sequelize } from "../../db/index.js";
 
 const productService = {
   async createProduct(data) {
+    const { addon_ids, ...productData } = data;
+
     // ✅ Check if category exists (only if category_id is provided)
-    if (data.category_id) {
-      const categoryExists = await Category.findByPk(data.category_id);
+    if (productData.category_id) {
+      const categoryExists = await Category.findByPk(productData.category_id);
       if (!categoryExists) {
         throw new Error("Category not found. Cannot create product.");
       }
     }
 
     // ✅ Check if subcategory exists (if provided)
-    if (data.sub_category_id) {
-      const subcategoryExists = await Subcategory.findByPk(data.sub_category_id);
+    if (productData.sub_category_id) {
+      const subcategoryExists = await Subcategory.findByPk(productData.sub_category_id);
       if (!subcategoryExists) {
         throw new Error("Subcategory not found. Cannot create product.");
       }
 
       // Optional: Check if subcategory belongs to the given category (only if category_id exists)
-      if (data.category_id && subcategoryExists.category_id !== data.category_id) {
+      if (productData.category_id && subcategoryExists.category_id !== productData.category_id) {
         throw new Error("Subcategory does not belong to the selected category.");
       }
     }
 
     // ✅ Create product
-    return await Product.create(data);
+    const product = await Product.create(productData);
+
+    if (Array.isArray(addon_ids) && addon_ids.length > 0) {
+      await product.setAddons(addon_ids);
+    }
+
+    return await this.getProductById(product.id);
   },
 
   // ✅ Get all products with filters, pagination, and exclude soft-deleted
@@ -72,6 +81,16 @@ const productService = {
       limit,
       offset,
       order: [["createdAt", "DESC"]],
+      include: [
+        {
+          model: Addon,
+          as: 'addons',
+          attributes: ['id', 'addon_name', 'price', 'is_active'],
+          through: { attributes: [] },
+          required: false,
+        }
+      ],
+      distinct: true,
     });
 
     // Fetch category and subcategory names in bulk
@@ -89,6 +108,7 @@ const productService = {
         ...p.dataValues,
         category_name: category ? category.category_name : null,
         subcategory_name: subcategory ? subcategory.subcategory_name : null,
+        addons: p.addons || [],
       };
     });
 
@@ -101,7 +121,17 @@ const productService = {
   },
 
   async getProductById(id) {
-    const product = await Product.findByPk(id);
+    const product = await Product.findByPk(id, {
+      include: [
+        {
+          model: Addon,
+          as: 'addons',
+          attributes: ['id', 'addon_name', 'price', 'is_active'],
+          through: { attributes: [] },
+          required: false,
+        }
+      ]
+    });
     if (!product) throw new Error("Product not found");
 
     const category = await Category.findByPk(product.category_id, { raw: true });
@@ -114,11 +144,23 @@ const productService = {
       ...product.dataValues,
       category_name: category ? category.category_name : null,
       subcategory_name: subcategory ? subcategory.subcategory_name : null,
+      addons: product.addons || [],
     };
   },
 
   async getProductByCode(product_code) {
-    const product = await Product.findOne({ where: { product_code } });
+    const product = await Product.findOne({
+      where: { product_code },
+      include: [
+        {
+          model: Addon,
+          as: 'addons',
+          attributes: ['id', 'addon_name', 'price', 'is_active'],
+          through: { attributes: [] },
+          required: false,
+        }
+      ]
+    });
     if (!product) throw new Error("Product not found");
 
     const category = await Category.findByPk(product.category_id, { raw: true });
@@ -130,14 +172,22 @@ const productService = {
       ...product.dataValues,
       category_name: category ? category.category_name : null,
       subcategory_name: subcategory ? subcategory.subcategory_name : null,
+      addons: product.addons || [],
     };
   },
 
   async updateProduct(id, data) {
     const product = await Product.findByPk(id);
     if (!product) throw new Error("Product not found");
-    await product.update(data);
-    return product;
+
+    const { addon_ids, ...productData } = data;
+    await product.update(productData);
+
+    if (addon_ids !== undefined && Array.isArray(addon_ids)) {
+      await product.setAddons(addon_ids);
+    }
+
+    return await this.getProductById(product.id);
   },
 
   async deleteProduct(id) {

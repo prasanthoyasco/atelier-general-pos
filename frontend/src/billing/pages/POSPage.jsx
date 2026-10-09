@@ -8,7 +8,8 @@ import {
   DollarSign, Armchair, ChevronDown, RefreshCw, FileText, CheckCircle2,
   AlertCircle, ArrowRight, Eye, Layers,
   MoveLeft,
-  ArrowLeft
+  ArrowLeft,
+  Sparkles
 } from "lucide-react";
 import { message, Drawer, Modal, Tag, Select, notification, Radio } from "antd";
 import productService from "../../Product/services/productService.js";
@@ -68,7 +69,28 @@ export default function POSPage() {
   const isEdit = Boolean(editId);
 
   const { user } = useAuth() || {};
-  const { selectedBranch } = useBranch() || {};
+  const { selectedBranch, branches, changeBranch } = useBranch() || {};
+
+  const effectiveBranchId = useMemo(() => {
+    if (selectedBranch && selectedBranch.id && selectedBranch.id !== "all") {
+      return selectedBranch.id;
+    }
+    if (branches && branches.length > 0) {
+      return branches[0].branch_id;
+    }
+    const saved = localStorage.getItem("selectedBranchId");
+    if (saved && saved !== "all") return saved;
+    return null;
+  }, [selectedBranch, branches]);
+
+  // Ensure POS defaults to an active branch if "all" was selected
+  useEffect(() => {
+    if (branches && branches.length > 0 && changeBranch) {
+      if (!selectedBranch || selectedBranch.id === "all") {
+        changeBranch(branches[0].branch_id);
+      }
+    }
+  }, [branches, selectedBranch, changeBranch]);
 
   // Clock
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -76,6 +98,35 @@ export default function POSPage() {
     const t = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(t);
   }, []);
+
+  // Responsive Viewport Hook
+  const [windowWidth, setWindowWidth] = useState(
+    typeof window !== "undefined" ? window.innerWidth : 1200
+  );
+  const isMobile = windowWidth < 768;
+  const isTablet = windowWidth >= 768 && windowWidth < 1024;
+
+  useEffect(() => {
+    const handleResize = () => setWindowWidth(window.innerWidth);
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  const handleNumpadPress = (btn) => {
+    if (btn.startsWith("₹")) {
+      const amt = btn.replace("₹", "");
+      setTenderedAmount(amt);
+    } else if (btn === "C") {
+      setTenderedAmount("");
+    } else if (btn === "⌫") {
+      setTenderedAmount((prev) => (prev ? prev.slice(0, -1) : ""));
+    } else {
+      setTenderedAmount((prev) => {
+        if (!prev || prev === "0") return btn === "00" ? "0" : btn;
+        return prev + btn;
+      });
+    }
+  };
 
   // Audio alerts
   const [soundEnabled, setSoundEnabled] = useState(true);
@@ -88,6 +139,12 @@ export default function POSPage() {
 
   // Cart
   const [cart, setCart] = useState([]);
+
+  // Addon Customization Modal State
+  const [customizeModalOpen, setCustomizeModalOpen] = useState(false);
+  const [customizingProduct, setCustomizingProduct] = useState(null);
+  const [selectedCustomAddons, setSelectedCustomAddons] = useState([]);
+  const [customItemQty, setCustomItemQty] = useState(1);
 
   // Customer State
   const [customerName, setCustomerName] = useState("");
@@ -153,7 +210,8 @@ export default function POSPage() {
 
   const fetchTables = async () => {
     try {
-      const res = await tableService.getAll();
+      const bId = effectiveBranchId;
+      const res = await tableService.getAll(bId ? { branch_id: bId } : {});
       if (res.data?.success) {
         setTables(res.data.data);
       }
@@ -164,8 +222,14 @@ export default function POSPage() {
 
   useEffect(() => {
     fetchProducts();
-    fetchTables();
   }, []);
+
+  useEffect(() => {
+    if (effectiveBranchId) {
+      fetchTables();
+      fetchKitchenQueue();
+    }
+  }, [effectiveBranchId]);
 
   // Kitchen orders & background KOT ready watcher
   const seenReadyOrderIdsRef = useRef(new Set());
@@ -187,7 +251,7 @@ export default function POSPage() {
 
     try {
       // 3. Persist to server
-      await billingService.updateKOTStatus(orderId, "served");
+      await billingService.updateKOTStatus(orderId, "served", null, effectiveBranchId);
       message.success(`${orderLabel} marked as served!`);
 
       // 4. Instant cross-tab broadcast to Kitchen KDS and all other tabs
@@ -212,7 +276,7 @@ export default function POSPage() {
     if (document.hidden) return;
     setLoadingKitchen(true);
     try {
-      const res = await billingService.getKitchenQueue();
+      const res = await billingService.getKitchenQueue(effectiveBranchId ? { branch_id: effectiveBranchId } : {});
       const active = res?.data || [];
       setKitchenOrders(active);
 
@@ -228,41 +292,46 @@ export default function POSPage() {
       });
 
       if (newlyReady.length > 0 && !initialKdsPollRef.current) {
-        if (soundEnabled) {
+        const isKitchen = (user?.role_name || userRole || user?.role || "").toLowerCase().includes("kitchen");
+        const isWaiter = !isKitchen;
+
+        if (soundEnabled && isWaiter) {
           playSoundAlert();
         }
 
-        newlyReady.forEach((order) => {
-          const kotLabel = order.kot_number ? `KOT #${order.kot_number}` : order.billing_no;
-          const tableLabel = order.table_no || "Table 1";
-          const itemCount = order.items?.reduce((s, i) => s + (i.quantity || 1), 0) || 0;
+        if (isWaiter) {
+          newlyReady.forEach((order) => {
+            const kotLabel = order.kot_number ? `KOT #${order.kot_number}` : order.billing_no;
+            const tableLabel = order.table_no || "Table 1";
+            const itemCount = order.items?.reduce((s, i) => s + (i.quantity || 1), 0) || 0;
 
-          notification.success({
-            message: (
-              <span className="font-bold text-emerald-800 flex items-center gap-1.5">
-                <UtensilsCrossed size={16} className="text-emerald-600" />
-                Order Ready to Serve!
-              </span>
-            ),
-            description: (
-              <div className="space-y-1 text-xs">
-                <p className="font-black text-slate-800">{kotLabel} • {tableLabel}</p>
-                <p className="text-slate-600">{itemCount} item(s) are cooked and ready to serve to customer.</p>
-              </div>
-            ),
-            btn: (
-              <button
-                onClick={() => handleMarkOrderServed(order.id, kotLabel)}
-                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] text-white rounded-lg text-xs font-bold shadow-xs cursor-pointer"
-              >
-                Mark as Served
-              </button>
-            ),
-            key: order.id,
-            duration: 12,
-            placement: "topRight",
+            notification.success({
+              message: (
+                <span className="font-bold text-emerald-800 flex items-center gap-1.5">
+                  <UtensilsCrossed size={16} className="text-emerald-600" />
+                  Order Ready to Serve!
+                </span>
+              ),
+              description: (
+                <div className="space-y-1 text-xs">
+                  <p className="font-black text-slate-800">{kotLabel} • {tableLabel}</p>
+                  <p className="text-slate-600">{itemCount} item(s) are cooked and ready to serve to customer.</p>
+                </div>
+              ),
+              btn: (
+                <button
+                  onClick={() => handleMarkOrderServed(order.id, kotLabel)}
+                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] text-white rounded-lg text-xs font-bold shadow-xs cursor-pointer"
+                >
+                  Mark as Served
+                </button>
+              ),
+              key: order.id,
+              duration: 15,
+              placement: "topRight",
+            });
           });
-        });
+        }
       }
 
       if (initialKdsPollRef.current) {
@@ -299,6 +368,42 @@ export default function POSPage() {
           setKitchenOrders((prev) =>
             prev.map((o) => (o.id === ticketId ? { ...o, kot_status: "served" } : o))
           );
+        }
+      }
+
+      if (eventType === "KOT_STATUS_UPDATED" && newStatus === "ready") {
+        const isKitchen = (user?.role_name || userRole || user?.role || "").toLowerCase().includes("kitchen");
+        const isWaiter = !isKitchen;
+        if (isWaiter) {
+          if (soundEnabled) playSoundAlert();
+          const kotLabel = e.data?.payload?.kot_number ? `KOT #${e.data.payload.kot_number}` : (e.data?.payload?.billing_no || "KOT Order");
+          const tableLabel = e.data?.payload?.table_no || "Table";
+          const count = e.data?.payload?.items_count || 1;
+          notification.success({
+            message: (
+              <span className="font-bold text-emerald-800 flex items-center gap-1.5">
+                <UtensilsCrossed size={16} className="text-emerald-600" />
+                Order Ready to Serve!
+              </span>
+            ),
+            description: (
+              <div className="space-y-1 text-xs">
+                <p className="font-black text-slate-800">{kotLabel} • {tableLabel}</p>
+                <p className="text-slate-600">{count} item(s) are cooked and ready to serve.</p>
+              </div>
+            ),
+            btn: ticketId ? (
+              <button
+                onClick={() => handleMarkOrderServed(ticketId, kotLabel)}
+                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] text-white rounded-lg text-xs font-bold shadow-xs cursor-pointer"
+              >
+                Mark as Served
+              </button>
+            ) : null,
+            key: ticketId || `ready-${Date.now()}`,
+            duration: 15,
+            placement: "topRight",
+          });
         }
       }
 
@@ -420,36 +525,70 @@ export default function POSPage() {
     });
   }, [allItems, activeCategory, searchTerm]);
 
-  // Cart operations (Minimum 48px touch targets)
-  const addToCart = (product) => {
+  // Cart operations (Minimum 48px touch targets) & Add-on customizations
+  const getCartItemKey = (productId, addons = []) => {
+    if (!addons || addons.length === 0) return `${productId}`;
+    const sortedAddonKeys = [...addons]
+      .sort((a, b) => (a.id || "").localeCompare(b.id || ""))
+      .map((a) => `${a.id}:${a.qty || 1}`)
+      .join("|");
+    return `${productId}_addons_${sortedAddonKeys}`;
+  };
+
+  const handleProductClick = (product) => {
+    if (product.addons && product.addons.length > 0) {
+      setCustomizingProduct(product);
+      setSelectedCustomAddons([]);
+      setCustomItemQty(1);
+      setCustomizeModalOpen(true);
+    } else {
+      addToCart(product);
+    }
+  };
+
+  const addToCart = (product, chosenAddons = [], qtyToAdd = 1) => {
     setCart((prev) => {
-      const exists = prev.find((p) => p.id === product.id);
+      const cartKey = getCartItemKey(product.id, chosenAddons);
+      const exists = prev.find((p) => (p.cart_key || p.id) === cartKey);
       if (exists) {
-        return prev.map((p) => (p.id === product.id ? { ...p, qty: p.qty + 1 } : p));
+        return prev.map((p) =>
+          (p.cart_key || p.id) === cartKey ? { ...p, qty: p.qty + qtyToAdd } : p
+        );
       }
-      const taxRate = parseFloat(
-        (product.tax_percentage || "0").toString().replace("%", "")
-      ) || 0;
+
+      const basePrice = parseFloat(product.selling_price || product.unit_price || 0);
+      const addonsTotal = (chosenAddons || []).reduce(
+        (sum, a) => sum + parseFloat(a.price || 0) * (a.qty || 1),
+        0
+      );
+      const unitPrice = basePrice + addonsTotal;
+
+      const taxRate =
+        parseFloat((product.tax_percentage || "0").toString().replace("%", "")) || 0;
+
       return [
         ...prev,
         {
+          cart_key: cartKey,
           id: product.id,
           name: product.product_name,
           category_name: product.category_name || "Item",
           image_url: product.image_url,
-          price: parseFloat(product.selling_price || product.unit_price || 0),
-          qty: 1,
+          base_price: basePrice,
+          addons: chosenAddons,
+          price: unitPrice,
+          qty: qtyToAdd,
           tax_rate: taxRate,
         },
       ];
     });
   };
 
-  const updateQty = (id, delta) => {
+  const updateQty = (keyOrId, delta) => {
     setCart((prev) =>
       prev
         .map((p) => {
-          if (p.id === id) {
+          if ((p.cart_key || p.id) === keyOrId) {
             const nextQty = p.qty + delta;
             return nextQty > 0 ? { ...p, qty: nextQty } : null;
           }
@@ -459,8 +598,57 @@ export default function POSPage() {
     );
   };
 
-  const removeItem = (id) => {
-    setCart((prev) => prev.filter((p) => p.id !== id));
+  const removeItem = (keyOrId) => {
+    setCart((prev) => prev.filter((p) => (p.cart_key || p.id) !== keyOrId));
+  };
+
+  const toggleAddon = (addon) => {
+    setSelectedCustomAddons((prev) => {
+      const exists = prev.find((a) => a.id === addon.id);
+      if (exists) {
+        return prev.filter((a) => a.id !== addon.id);
+      } else {
+        return [...prev, { id: addon.id, addon_name: addon.addon_name, price: parseFloat(addon.price || 0), qty: 1 }];
+      }
+    });
+  };
+
+  const updateAddonQty = (addonId, delta) => {
+    setSelectedCustomAddons((prev) =>
+      prev
+        .map((a) => {
+          if (a.id === addonId) {
+            const newQty = (a.qty || 1) + delta;
+            return newQty > 0 ? { ...a, qty: newQty } : null;
+          }
+          return a;
+        })
+        .filter(Boolean)
+    );
+  };
+
+  const computedCustomUnitPrice = useMemo(() => {
+    if (!customizingProduct) return 0;
+    const base = parseFloat(customizingProduct.selling_price || customizingProduct.unit_price || 0);
+    const addonsSum = selectedCustomAddons.reduce(
+      (sum, a) => sum + parseFloat(a.price || 0) * (a.qty || 1),
+      0
+    );
+    return base + addonsSum;
+  }, [customizingProduct, selectedCustomAddons]);
+
+  const handleAddCustomizedToCart = () => {
+    if (!customizingProduct) return;
+    addToCart(customizingProduct, selectedCustomAddons, customItemQty);
+    setCustomizeModalOpen(false);
+    message.success(`Added ${customizingProduct.product_name} with customizations`);
+  };
+
+  const handleAddPlainToCart = () => {
+    if (!customizingProduct) return;
+    addToCart(customizingProduct, [], customItemQty);
+    setCustomizeModalOpen(false);
+    message.success(`Added ${customizingProduct.product_name}`);
   };
 
   const clearCart = () => {
@@ -528,7 +716,7 @@ export default function POSPage() {
         "Counter 1", "Counter 2", "Takeaway"
       ];
     }
-    return tables.map(t => t.table_no);
+    return tables.map(t => t.table_name || t.table_no);
   }, [tables]);
 
   // Active table mapping from live kitchen orders
@@ -558,7 +746,7 @@ export default function POSPage() {
   // Select Table from Grid / Modal
   const handleSelectTable = (tbl) => {
     setTableNo(tbl);
-    const selectedTblObj = tables.find(t => t.table_no === tbl);
+    const selectedTblObj = tables.find(t => t.table_name === tbl || t.table_no === tbl);
     setSelectedTableId(selectedTblObj ? selectedTblObj.id : null);
 
     const existingOrders = activeTableMap[tbl];
@@ -602,11 +790,17 @@ export default function POSPage() {
         0
       );
 
+      const itemAddons = Array.isArray(i.addons) ? i.addons : [];
+      const cartKey = getCartItemKey(prodId || matchedProduct?.id, itemAddons);
+
       return {
+        cart_key: cartKey,
         id: prodId || matchedProduct?.id || `item-${Date.now()}-${Math.random()}`,
         name: i.product_name || i.product?.product_name || matchedProduct?.product_name || "Item",
         category_name: i.category_name || matchedProduct?.category_name || "Item",
         image_url: i.image_url || i.product?.image_url || matchedProduct?.image_url || null,
+        base_price: parseFloat(matchedProduct?.selling_price || parsedPrice),
+        addons: itemAddons,
         price: isNaN(parsedPrice) ? 0 : parsedPrice,
         qty: parseInt(i.quantity || i.qty || 1, 10),
         tax_rate: isNaN(parsedTax) ? 0 : parsedTax,
@@ -717,6 +911,7 @@ export default function POSPage() {
 
       if (billId) {
         const updatePayload = {
+          branch_id: effectiveBranchId,
           customer_name: customerName.trim() || "Walk-in Customer",
           customer_phone: customerPhone.trim() || "9999999999",
           payment_method: paymentMethod,
@@ -738,6 +933,7 @@ export default function POSPage() {
             tax_percentage: item.tax_rate,
             tax_amount: item.price * item.qty * (item.tax_rate / 100),
             total_price: item.price * item.qty * (1 + item.tax_rate / 100),
+            addons: item.addons || [],
           })),
         };
 
@@ -747,6 +943,7 @@ export default function POSPage() {
       } else {
         // Direct counter checkout
         const createPayload = {
+          branch_id: effectiveBranchId,
           customer_name: customerName.trim() || "Walk-in Customer",
           customer_phone: customerPhone.trim() || "9999999999",
           type: "Casier Billing",
@@ -773,6 +970,7 @@ export default function POSPage() {
             tax_percentage: item.tax_rate,
             tax_amount: item.price * item.qty * (item.tax_rate / 100),
             total_price: item.price * item.qty * (1 + item.tax_rate / 100),
+            addons: item.addons || [],
           })),
         };
 
@@ -818,6 +1016,7 @@ export default function POSPage() {
     setSubmittingKOT(true);
     try {
       const payload = {
+        branch_id: effectiveBranchId,
         customer_name: customerName.trim() || "Walk-in Customer",
         customer_phone: customerPhone.trim() || "9999999999",
         type: "Casier Billing",
@@ -843,6 +1042,7 @@ export default function POSPage() {
           tax_percentage: item.tax_rate,
           tax_amount: item.price * item.qty * (item.tax_rate / 100),
           total_price: item.price * item.qty * (1 + item.tax_rate / 100),
+          addons: item.addons || [],
         })),
       };
 
@@ -858,7 +1058,11 @@ export default function POSPage() {
       // Broadcast instant new KOT creation event to KDS
       broadcastKOTEvent("NEW_KOT_ORDER");
 
-      if (soundEnabled) playSoundAlert();
+      // Sound for create KOT should only play if logged in user is kitchen user or on /billing/kitchen
+      const isKitchen = (user?.role_name || userRole || user?.role || "").toLowerCase().includes("kitchen") || window.location.pathname.includes("/billing/kitchen");
+      if (soundEnabled && isKitchen) {
+        playSoundAlert();
+      }
 
       // Reset cart and customer for fast rapid order taking
       setCart([]);
@@ -893,9 +1097,24 @@ export default function POSPage() {
               <Store size={22} />
             </div>
             <div>
-              <h1 className="text-sm hidden md:block md:text-base font-bold text-slate-800 !mb-0 leading-tight">
-                {selectedBranch?.name || "Sweets & Snacks POS"}
-              </h1>
+              {branches && branches.length > 1 ? (
+                <Select
+                  value={effectiveBranchId}
+                  onChange={(val) => changeBranch(val)}
+                  options={branches.map((b) => ({
+                    value: b.branch_id,
+                    label: b.branch?.branch_name || b.branch?.name || "Branch",
+                  }))}
+                  className="w-36 md:w-44 font-bold text-sm"
+                  popupMatchSelectWidth={false}
+                />
+              ) : (
+                <h1 className="text-sm hidden md:block md:text-base font-bold text-slate-800 !mb-0 leading-tight">
+                  {selectedBranch?.name && selectedBranch.name !== "All Branches"
+                    ? selectedBranch.name
+                    : branches?.[0]?.branch?.branch_name || "Sweets & Snacks POS"}
+                </h1>
+              )}
             </div>
           </div>
         </div>
@@ -943,10 +1162,10 @@ export default function POSPage() {
         </div>
       </header>
 
-      {/* 2. MAIN BODY (Split View Desktop, Full Catalogue Mobile) */}
-      <div className="flex-1 flex overflow-hidden min-h-0 p-3 md:p-4 gap-4">
-        {/* ================= LEFT PANEL: NEW ORDER (Desktop only) ================= */}
-        <div className="hidden lg:flex w-[380px] xl:w-[410px] bg-white rounded-2xl border border-slate-200/90 shadow-sm flex-col overflow-hidden shrink-0">
+      {/* 2. MAIN BODY (Split View Desktop & Tablet, Full Catalogue Mobile) */}
+      <div className="flex-1 flex overflow-hidden min-h-0 p-2.5 sm:p-3 md:p-4 gap-3 md:gap-4">
+        {/* ================= LEFT PANEL: NEW ORDER (Tablet Landscape & Desktop) ================= */}
+        <div className="hidden md:flex w-[330px] lg:w-[370px] xl:w-[410px] bg-white rounded-2xl border border-slate-200/90 shadow-sm flex-col overflow-hidden shrink-0">
           {/* Header row: Table selection banner */}
           <div className="px-4 py-2.5 border-b border-slate-100 flex items-center justify-between shrink-0 bg-slate-50/80">
             <div className="flex items-center gap-2 min-w-0">
@@ -1039,7 +1258,7 @@ export default function POSPage() {
               </div>
             ) : (
               cart.map((item) => (
-                <div key={item.id} className="pt-2 first:pt-0 flex items-center justify-between gap-3">
+                <div key={item.cart_key || item.id} className="pt-2 first:pt-0 flex items-center justify-between gap-3">
                   {/* Thumbnail */}
                   <div className="w-11 h-11 rounded-full overflow-hidden border border-slate-100 shrink-0 bg-slate-50 flex items-center justify-center">
                     <FoodThumbnail
@@ -1055,6 +1274,18 @@ export default function POSPage() {
                     <p className="text-xs md:text-sm font-bold text-slate-800 truncate leading-tight">
                       {item.name}
                     </p>
+                    {item.addons && item.addons.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {item.addons.map((ad, idx) => (
+                          <span
+                            key={idx}
+                            className="inline-flex items-center text-[10px] font-semibold bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded border border-indigo-100"
+                          >
+                            + {ad.addon_name || ad.name} ({fmt(ad.price)})
+                          </span>
+                        ))}
+                      </div>
+                    )}
                     <p className="text-xs font-bold text-emerald-600 mt-0.5">
                       {fmt(item.price)}
                     </p>
@@ -1063,7 +1294,7 @@ export default function POSPage() {
                   {/* Stepper */}
                   <div className="flex items-center border border-slate-200 rounded-lg bg-white shrink-0 overflow-hidden shadow-sm">
                     <button
-                      onClick={() => updateQty(item.id, -1)}
+                      onClick={() => updateQty(item.cart_key || item.id, -1)}
                       aria-label="Decrease quantity"
                       className="min-w-[28px] min-h-[28px] flex items-center justify-center text-slate-600 hover:bg-slate-100 active:scale-95 transition cursor-pointer"
                     >
@@ -1073,7 +1304,7 @@ export default function POSPage() {
                       {item.qty}
                     </span>
                     <button
-                      onClick={() => updateQty(item.id, 1)}
+                      onClick={() => updateQty(item.cart_key || item.id, 1)}
                       aria-label="Increase quantity"
                       className="min-w-[28px] min-h-[28px] flex items-center justify-center text-slate-600 hover:bg-slate-100 active:scale-95 transition cursor-pointer"
                     >
@@ -1090,7 +1321,7 @@ export default function POSPage() {
 
                   {/* Delete button */}
                   <button
-                    onClick={() => removeItem(item.id)}
+                    onClick={() => removeItem(item.cart_key || item.id)}
                     aria-label="Remove item"
                     className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-red-500 transition cursor-pointer"
                   >
@@ -1197,15 +1428,15 @@ export default function POSPage() {
             </button>
           </div>
 
-          {/* Category Tabs */}
-          <div className="flex items-center gap-2.5 overflow-x-auto py-1 shrink-0 scrollbar-none">
+          {/* Category Tabs with Touch Snap Scrolling */}
+          <div className="flex items-center gap-2 overflow-x-auto py-1 shrink-0 scrollbar-none snap-x snap-mandatory scroll-smooth">
             {categoryTabs.map((tab) => {
               const isActive = activeCategory === tab.key;
               return (
                 <button
                   key={tab.key}
                   onClick={() => setActiveCategory(tab.key)}
-                  className={`min-w-[85px] md:min-w-[100px] min-h-[58px] py-2 px-3 rounded-xl flex flex-col items-center justify-center gap-1 transition-all cursor-pointer select-none shrink-0 ${
+                  className={`snap-start min-w-[78px] sm:min-w-[88px] md:min-w-[96px] min-h-[54px] py-1.5 px-2.5 rounded-xl flex flex-col items-center justify-center gap-1 transition-all active:scale-95 cursor-pointer select-none shrink-0 ${
                     tab.key === "all"
                       ? isActive
                         ? "bg-blue-600 !text-white shadow-md shadow-blue-500/20 scale-[1.02]"
@@ -1216,7 +1447,7 @@ export default function POSPage() {
                   }`}
                 >
                   <div className="shrink-0">{tab.icon}</div>
-                  <span className="text-xs font-bold capitalize truncate max-w-[90px]">
+                  <span className="text-xs font-bold capitalize truncate max-w-[85px]">
                     {tab.label}
                   </span>
                 </button>
@@ -1224,7 +1455,7 @@ export default function POSPage() {
             })}
           </div>
 
-          {/* Products Grid (4 Columns Desktop, 2 Columns Mobile) */}
+          {/* Products Grid (Adaptive Tablet & Mobile Columns) */}
           <div className="flex-1 overflow-y-auto min-h-0 pr-1">
             {loadingProducts ? (
               <div className="h-64 flex flex-col items-center justify-center text-slate-400">
@@ -1238,17 +1469,18 @@ export default function POSPage() {
                 <p className="text-xs text-slate-400">Try selecting another category or clear search</p>
               </div>
             ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-3 md:gap-4 pb-20 lg:py-4">
+              <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3 md:gap-3.5 pb-24 md:pb-4">
                 {filteredItems.map((item) => {
-                  const inCart = cart.find((c) => c.id === item.id);
+                  const hasAddons = item.addons && item.addons.length > 0;
+                  const inCartCount = cart.filter((c) => c.id === item.id).reduce((s, c) => s + c.qty, 0);
                   const price = parseFloat(item.selling_price || item.unit_price || 0);
 
                   return (
                     <div
                       key={item.id}
-                      onClick={() => addToCart(item)}
-                      className={`bg-white rounded-2xl border !pb-2 p-4 flex flex-col items-center justify-between cursor-pointer relative select-none transition-all duration-200 shadow-sm group hover:shadow-md hover:border-slate-300 active:scale-[0.98] ${
-                        inCart
+                      onClick={() => handleProductClick(item)}
+                      className={`bg-white rounded-2xl border !pb-2 p-3.5 flex flex-col items-center justify-between cursor-pointer relative select-none transition-all duration-150 shadow-xs hover:shadow-md hover:border-slate-300 active:scale-[0.96] ${
+                        inCartCount > 0
                           ? "border-emerald-500 ring-2 ring-emerald-500/20"
                           : "border-slate-200/80"
                       }`}
@@ -1257,7 +1489,7 @@ export default function POSPage() {
                       <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 absolute top-3.5 right-3.5" />
 
                       {/* Product image (centered) */}
-                      <div className="w-24 h-24 md:w-28 md:h-28 rounded-full overflow-hidden flex items-center justify-center my-2 p-1 group-hover:scale-105 transition-transform duration-200">
+                      <div className="w-20 h-20 sm:w-24 sm:h-24 md:w-24 md:h-24 rounded-full overflow-hidden flex items-center justify-center my-1.5 p-1 group-hover:scale-105 transition-transform duration-200">
                         <FoodThumbnail
                           src={item.image_url}
                           alt={item.product_name}
@@ -1268,18 +1500,25 @@ export default function POSPage() {
 
                       {/* Title & Green Price */}
                       <div className="w-full text-center mt-1">
-                        <h3 className="text-sm font-bold text-slate-800 leading-tight truncate">
+                        <h3 className="text-xs sm:text-sm font-bold text-slate-800 leading-tight truncate">
                           {item.product_name}
                         </h3>
-                        <p className="text-sm font-bold text-emerald-600 mt-1">
-                          {fmt(price)}
-                        </p>
+                        <div className="flex items-center justify-center gap-1.5 mt-1 flex-wrap">
+                          <span className="text-xs sm:text-sm font-bold text-emerald-600">
+                            {fmt(price)}
+                          </span>
+                          {hasAddons && (
+                            <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-100 px-1.5 py-0.5 rounded-md flex items-center gap-0.5">
+                              <Sparkles size={10} /> +Customise
+                            </span>
+                          )}
+                        </div>
                       </div>
 
                       {/* Added quantity badge if in cart */}
-                      {inCart && (
-                        <div className="absolute top-3 left-3 bg-emerald-500 text-white text-[11px] font-black w-6 h-6 rounded-full flex items-center justify-center shadow-xs">
-                          {inCart.qty}
+                      {inCartCount > 0 && (
+                        <div className="absolute top-2.5 left-2.5 bg-emerald-500 text-white text-[10px] font-black w-5 h-5 rounded-full flex items-center justify-center shadow-xs">
+                          {inCartCount}
                         </div>
                       )}
                     </div>
@@ -1289,11 +1528,11 @@ export default function POSPage() {
             )}
           </div>
 
-          {/* Bottom Action Row (Desktop) */}
-          <div className="hidden lg:flex items-center justify-between pt-2 border-t border-slate-200/80 shrink-0">
+          {/* Bottom Action Row (Desktop & Tablet) */}
+          <div className="hidden md:flex items-center justify-between pt-2 border-t border-slate-200/80 shrink-0">
             <button
               onClick={() => setKotDrawerOpen(true)}
-              className="min-h-[48px] px-4 py-2.5 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl text-xs md:text-sm font-bold text-slate-700 flex items-center gap-2 transition cursor-pointer shadow-sm"
+              className="min-h-[46px] px-3.5 py-2 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl text-xs md:text-sm font-bold text-slate-700 flex items-center gap-2 transition cursor-pointer shadow-xs active:scale-95"
             >
               <ClipboardList size={18} className="text-slate-600" />
               <span>View KOTs</span>
@@ -1306,7 +1545,7 @@ export default function POSPage() {
 
             <button
               onClick={() => setSettingsOpen(true)}
-              className="min-h-[48px] px-4 py-2.5 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl text-xs md:text-sm font-bold text-slate-700 flex items-center gap-2 transition cursor-pointer shadow-sm"
+              className="min-h-[46px] px-3.5 py-2 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl text-xs md:text-sm font-bold text-slate-700 flex items-center gap-2 transition cursor-pointer shadow-xs active:scale-95"
             >
               <Settings size={18} className="text-slate-600" />
               <span>Settings</span>
@@ -1316,7 +1555,7 @@ export default function POSPage() {
       </div>
 
       {/* ================= 3. MOBILE STICKY BOTTOM CART BAR ================= */}
-      <div className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-slate-200 shadow-2xl p-3 space-y-2">
+      <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200/90 shadow-[0_-4px_24px_rgba(0,0,0,0.08)] px-3 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] space-y-2">
         {/* Ready Orders notification strip on mobile if any */}
         {readyOrdersCount > 0 && (
           <div
@@ -1333,7 +1572,7 @@ export default function POSPage() {
         {/* Cart Preview Row */}
         <div
           onClick={() => setMobileCartOpen(true)}
-          className="flex items-center justify-between px-3 py-1 cursor-pointer"
+          className="flex items-center justify-between px-3 py-1 cursor-pointer active:scale-[0.99] transition-transform"
         >
           <div className="flex items-center gap-2 text-slate-800">
             <Utensils size={18} className="text-orange-500" />
@@ -1355,10 +1594,10 @@ export default function POSPage() {
           <button
             onClick={handleCreateKOT}
             disabled={submittingKOT || cart.length === 0}
-            className="py-3 px-3 bg-[#F97316] hover:bg-[#EA580C] active:scale-[0.99] !text-white rounded-xl flex items-center justify-center gap-2 shadow-md shadow-orange-500/25 transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+            className="min-h-[48px] py-2.5 px-3 bg-[#F97316] hover:bg-[#EA580C] active:scale-[0.98] !text-white rounded-xl flex items-center justify-center gap-2 shadow-md shadow-orange-500/25 transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer font-black text-xs uppercase"
           >
             <Printer size={18} strokeWidth={2.2} />
-            <span className="text-xs font-black tracking-tight leading-tight">
+            <span className="tracking-tight leading-tight">
               {submittingKOT ? "Sending..." : loadedBillId ? "Update KOT" : "Create KOT"}
             </span>
           </button>
@@ -1366,10 +1605,10 @@ export default function POSPage() {
           <button
             onClick={() => handleOpenPayment()}
             disabled={cart.length === 0}
-            className="py-3 px-3 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] !text-white rounded-xl flex items-center justify-center gap-2 shadow-md shadow-emerald-500/25 transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+            className="min-h-[48px] py-2.5 px-3 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] !text-white rounded-xl flex items-center justify-center gap-2 shadow-md shadow-emerald-500/25 transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer font-black text-xs uppercase"
           >
             <CreditCard size={18} strokeWidth={2.2} />
-            <span className="text-xs font-black tracking-tight leading-tight">
+            <span className="tracking-tight leading-tight">
               Pay & Settle
             </span>
           </button>
@@ -1379,19 +1618,22 @@ export default function POSPage() {
       {/* ================= 4. MOBILE SLIDE-UP CART DRAWER ================= */}
       <Drawer
         placement="bottom"
-        height="80vh"
+        height="84vh"
         onClose={() => setMobileCartOpen(false)}
         open={mobileCartOpen}
         title={
-          <div className="flex items-center justify-between w-full">
-            <h2 className="text-base font-bold text-slate-800">Current Order ({tableNo})</h2>
-            <button
-              onClick={clearCart}
-              disabled={cart.length === 0}
-              className="text-xs text-red-500 font-bold px-2 py-1"
-            >
-              Clear
-            </button>
+          <div className="w-full">
+            <div className="w-12 h-1 bg-slate-300 rounded-full mx-auto -mt-1 mb-2" />
+            <div className="flex items-center justify-between w-full">
+              <h2 className="text-base font-bold text-slate-800">Current Order ({tableNo})</h2>
+              <button
+                onClick={clearCart}
+                disabled={cart.length === 0}
+                className="text-xs text-red-500 font-bold px-2 py-1 cursor-pointer"
+              >
+                Clear
+              </button>
+            </div>
           </div>
         }
       >
@@ -1418,22 +1660,34 @@ export default function POSPage() {
           {/* Cart items list */}
           <div className="flex-1 overflow-y-auto space-y-3 min-h-0 divide-y divide-slate-100">
             {cart.map((item) => (
-              <div key={item.id} className="pt-2.5 flex items-center justify-between gap-2">
+              <div key={item.cart_key || item.id} className="pt-2.5 flex items-center justify-between gap-2">
                 <div className="flex-1 min-w-0">
                   <p className="text-xs font-bold text-slate-800 truncate">{item.name}</p>
+                  {item.addons && item.addons.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-0.5">
+                      {item.addons.map((ad, idx) => (
+                        <span
+                          key={idx}
+                          className="inline-flex items-center text-[9px] font-semibold bg-indigo-50 text-indigo-700 px-1 py-0.2 rounded border border-indigo-100"
+                        >
+                          + {ad.addon_name || ad.name}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                   <p className="text-xs font-semibold text-emerald-600">{fmt(item.price)}</p>
                 </div>
 
                 <div className="flex items-center border border-slate-200 rounded-lg">
                   <button
-                    onClick={() => updateQty(item.id, -1)}
+                    onClick={() => updateQty(item.cart_key || item.id, -1)}
                     className="min-w-[36px] min-h-[36px] flex items-center justify-center text-slate-600"
                   >
                     <Minus size={14} />
                   </button>
                   <span className="w-6 text-center text-xs font-bold">{item.qty}</span>
                   <button
-                    onClick={() => updateQty(item.id, 1)}
+                    onClick={() => updateQty(item.cart_key || item.id, 1)}
                     className="min-w-[36px] min-h-[36px] flex items-center justify-center text-slate-600"
                   >
                     <Plus size={14} />
@@ -1445,7 +1699,7 @@ export default function POSPage() {
                 </span>
 
                 <button
-                  onClick={() => removeItem(item.id)}
+                  onClick={() => removeItem(item.cart_key || item.id)}
                   className="w-8 h-8 flex items-center justify-center text-slate-400"
                 >
                   <X size={16} />
@@ -1504,7 +1758,8 @@ export default function POSPage() {
         open={customerModalOpen}
         onCancel={() => setCustomerModalOpen(false)}
         footer={null}
-        width={400}
+        width={isMobile ? "100%" : 420}
+        style={isMobile ? { maxWidth: "100%", margin: "0 auto", top: 12 } : undefined}
       >
         <div className="space-y-4 py-2">
           <div>
@@ -1827,7 +2082,8 @@ export default function POSPage() {
         open={tablesModalOpen}
         onCancel={() => setTablesModalOpen(false)}
         footer={null}
-        width={760}
+        width={isMobile ? "100%" : 760}
+        style={isMobile ? { maxWidth: "100%", margin: "0 auto", top: 12 } : undefined}
       >
         <div className="py-2 space-y-4">
           <p className="text-xs text-slate-500 font-medium">
@@ -1983,7 +2239,8 @@ export default function POSPage() {
         open={paymentModalOpen}
         onCancel={() => setPaymentModalOpen(false)}
         footer={null}
-        width={580}
+        width={isMobile ? "100%" : 580}
+        style={isMobile ? { maxWidth: "100%", margin: "0 auto", top: 12 } : undefined}
       >
         <div className="space-y-4 py-1">
           {/* Bill Total Highlight Card */}
@@ -2044,6 +2301,7 @@ export default function POSPage() {
                 </label>
                 <input
                   type="number"
+                  inputMode="decimal"
                   value={tenderedAmount}
                   onChange={(e) => setTenderedAmount(e.target.value)}
                   placeholder="Enter cash received..."
@@ -2065,11 +2323,44 @@ export default function POSPage() {
                     key={chip.label}
                     type="button"
                     onClick={() => setTenderedAmount(chip.val.toString())}
-                    className="px-2.5 py-1 bg-white border border-slate-200 hover:border-emerald-500 rounded-lg text-xs font-bold text-slate-700 transition cursor-pointer"
+                    className="px-2.5 py-1 bg-white border border-slate-200 hover:border-emerald-500 rounded-lg text-xs font-bold text-slate-700 transition cursor-pointer active:scale-95"
                   >
                     {chip.label}
                   </button>
                 ))}
+              </div>
+
+              {/* Virtual Touch Numpad for Mobile & Tablet Touchscreens */}
+              <div className="pt-1 select-none">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5">
+                  Touch Keypad
+                </span>
+                <div className="grid grid-cols-4 gap-1.5">
+                  {["1", "2", "3", "₹100", "4", "5", "6", "₹200", "7", "8", "9", "₹500", "C", "0", "00", "⌫"].map((btn) => {
+                    const isQuickCash = btn.startsWith("₹");
+                    const isClear = btn === "C";
+                    const isBackspace = btn === "⌫";
+
+                    return (
+                      <button
+                        key={btn}
+                        type="button"
+                        onClick={() => handleNumpadPress(btn)}
+                        className={`min-h-[44px] rounded-xl font-black text-sm flex items-center justify-center transition-all active:scale-95 cursor-pointer ${
+                          isQuickCash
+                            ? "bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 text-xs font-bold"
+                            : isClear
+                            ? "bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 font-bold"
+                            : isBackspace
+                            ? "bg-slate-100 text-slate-700 border border-slate-200 hover:bg-slate-200 text-base font-bold"
+                            : "bg-white text-slate-800 border border-slate-200 hover:bg-slate-50 text-base shadow-xs"
+                        }`}
+                      >
+                        {btn}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
 
               {/* Return Change Pill */}
@@ -2276,6 +2567,160 @@ export default function POSPage() {
           </div>
         </Modal>
       )}
+
+      {/* ================= 12. CUSTOMIZE / ADDONS MODAL ================= */}
+      <Modal
+        title={
+          <div className="flex items-center gap-2.5 pb-2 border-b border-slate-100">
+            <div className="w-9 h-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
+              <Sparkles size={20} />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-slate-800 leading-tight">
+                Customize {customizingProduct?.product_name}
+              </h3>
+              <p className="text-xs text-slate-500 font-normal">
+                Base Price: {fmt(parseFloat(customizingProduct?.selling_price || customizingProduct?.unit_price || 0))}
+              </p>
+            </div>
+          </div>
+        }
+        open={customizeModalOpen}
+        onCancel={() => setCustomizeModalOpen(false)}
+        footer={null}
+        width={isMobile ? "100%" : 480}
+        style={isMobile ? { maxWidth: "100%", margin: "0 auto", top: 12 } : undefined}
+        centered
+        destroyOnHidden
+      >
+        {customizingProduct && (
+          <div className="py-2 space-y-4">
+            {/* Available Addons */}
+            <div>
+              <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-2">
+                Available Add-ons & Extras
+              </label>
+
+              <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                {customizingProduct.addons && customizingProduct.addons.length > 0 ? (
+                  customizingProduct.addons.map((addon) => {
+                    const isSelected = selectedCustomAddons.some((a) => a.id === addon.id);
+                    const selectedItem = selectedCustomAddons.find((a) => a.id === addon.id);
+                    const qty = selectedItem?.qty || 1;
+
+                    return (
+                      <div
+                        key={addon.id}
+                        onClick={() => toggleAddon(addon)}
+                        className={`p-3 rounded-xl border flex items-center justify-between transition-all cursor-pointer select-none ${
+                          isSelected
+                            ? "border-indigo-500 bg-indigo-50/50 shadow-xs"
+                            : "border-slate-200 bg-white hover:border-slate-300"
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div
+                            className={`w-5 h-5 rounded-md flex items-center justify-center border transition-all ${
+                              isSelected
+                                ? "bg-indigo-600 border-indigo-600 text-white"
+                                : "border-slate-300 bg-white"
+                            }`}
+                          >
+                            {isSelected && <Check size={13} strokeWidth={3} />}
+                          </div>
+                          <div>
+                            <span className="text-sm font-bold text-slate-800 block">
+                              {addon.addon_name}
+                            </span>
+                            <span className="text-xs font-semibold text-emerald-600">
+                              +{fmt(addon.price)}
+                            </span>
+                          </div>
+                        </div>
+
+                        {isSelected && (
+                          <div
+                            className="flex items-center border border-indigo-200 rounded-lg bg-white overflow-hidden shadow-xs"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <button
+                              onClick={() => updateAddonQty(addon.id, -1)}
+                              className="w-7 h-7 flex items-center justify-center text-slate-600 hover:bg-slate-100 cursor-pointer"
+                            >
+                              <Minus size={12} strokeWidth={2.5} />
+                            </button>
+                            <span className="w-6 text-center text-xs font-bold text-slate-800">
+                              {qty}
+                            </span>
+                            <button
+                              onClick={() => updateAddonQty(addon.id, 1)}
+                              className="w-7 h-7 flex items-center justify-center text-slate-600 hover:bg-slate-100 cursor-pointer"
+                            >
+                              <Plus size={12} strokeWidth={2.5} />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
+                ) : (
+                  <p className="text-xs text-slate-400 py-3 text-center">No add-ons available for this item.</p>
+                )}
+              </div>
+            </div>
+
+            {/* Quantity for configured item */}
+            <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-600">Item Quantity</span>
+              <div className="flex items-center border border-slate-200 rounded-lg bg-white overflow-hidden shadow-xs">
+                <button
+                  onClick={() => setCustomItemQty((q) => Math.max(1, q - 1))}
+                  className="w-8 h-8 flex items-center justify-center text-slate-600 hover:bg-slate-100 cursor-pointer"
+                >
+                  <Minus size={14} strokeWidth={2.5} />
+                </button>
+                <span className="w-8 text-center text-sm font-bold text-slate-800">
+                  {customItemQty}
+                </span>
+                <button
+                  onClick={() => setCustomItemQty((q) => q + 1)}
+                  className="w-8 h-8 flex items-center justify-center text-slate-600 hover:bg-slate-100 cursor-pointer"
+                >
+                  <Plus size={14} strokeWidth={2.5} />
+                </button>
+              </div>
+            </div>
+
+            {/* Price calculation bar */}
+            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between text-xs">
+              <span className="text-slate-500 font-medium">Computed Unit Price</span>
+              <span className="text-sm font-black text-slate-800">
+                {fmt(computedCustomUnitPrice)}
+              </span>
+            </div>
+
+            {/* Action buttons */}
+            <div className="flex gap-2 pt-1">
+              <button
+                onClick={handleAddPlainToCart}
+                className="flex-1 py-2.5 px-3 border border-slate-200 hover:bg-slate-100 text-slate-700 font-bold rounded-xl text-xs transition cursor-pointer"
+              >
+                Add Regular (No Add-ons)
+              </button>
+
+              <button
+                onClick={handleAddCustomizedToCart}
+                className="flex-1 py-2.5 px-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs shadow-md shadow-indigo-500/20 transition cursor-pointer flex items-center justify-center gap-1.5"
+              >
+                <span>Add with Add-ons</span>
+                <span className="font-extrabold text-indigo-100">
+                  • {fmt(computedCustomUnitPrice * customItemQty)}
+                </span>
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

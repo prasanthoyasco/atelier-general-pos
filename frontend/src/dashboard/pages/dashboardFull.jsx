@@ -422,7 +422,7 @@ const DashboardFull = () => {
   return (
     <div className="px-4 py-2 bg-[#f8fafc] min-h-screen font-sans">
       {/* Header bar */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-3">
+      <div className="flex flex-row justify-between items-start sm:items-center gap-4 mb-3">
         <div>
           <h1 className="text-2xl font-bold text-slate-600 tracking-tight">Dashboard</h1>
           {selectedBranch && (
@@ -447,6 +447,49 @@ const DashboardFull = () => {
           </Select>
         </div>
       </div>
+
+      {/* Sample Preview Acknowledgment & Promotion Banner */}
+      {isDemo && (
+        <div className="mb-3 p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white shadow-md relative overflow-hidden border border-indigo-500/20">
+          <div className="absolute -right-6 -bottom-6 w-36 h-36 rounded-full bg-indigo-500/10 blur-xl pointer-events-none" />
+          <div className="absolute right-36 -top-8 w-28 h-28 rounded-full bg-emerald-500/10 blur-lg pointer-events-none" />
+
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 relative z-10">
+            <div className="space-y-1.5 max-w-2xl">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-400/20 text-amber-300 border border-amber-400/30 text-[11px] font-bold uppercase tracking-wider">
+                  <Sparkles size={11} className="text-amber-300" /> Sample Preview Mode
+                </span>
+                <span className="text-xs text-indigo-200/90 font-medium">
+                  • No transactions found for {getPeriodLabel().toLowerCase()}
+                </span>
+              </div>
+              <h2 className="text-base sm:text-lg font-bold text-white tracking-tight !mb-0">
+                Unlock Real-Time Business Insights & Live Analytics
+              </h2>
+              <p className="text-xs sm:text-[13px] text-slate-300 leading-relaxed font-normal !mb-0">
+                You are currently viewing sample curves and figures demonstrating what your store dashboard will look like. Once you begin taking orders and generating bills, this page will automatically display your live revenue, payment splits, bestselling products, and customer retention.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2.5 shrink-0">
+              <button
+                onClick={() => navigate("/billing/pos")}
+                className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs sm:text-sm flex items-center gap-2 shadow-sm transition active:scale-95 cursor-pointer"
+              >
+                <ShoppingCart size={15} />
+                <span>Start POS Billing</span>
+              </button>
+              <button
+                onClick={() => navigate("/billing/billing")}
+                className="px-3.5 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs sm:text-sm border border-white/20 transition active:scale-95 cursor-pointer"
+              >
+                Create Bill
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Row 1: Sparkline summary metrics */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-2.5 mb-3">
@@ -592,8 +635,17 @@ const DashboardFull = () => {
         <div className="bg-white rounded-2xl border border-slate-100 p-6 shadow-sm col-span-1 lg:col-span-2">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
             <div>
-              <h3 className="text-base font-bold text-slate-600">Sales Trend (7 Days)</h3>
-              <p className="text-slate-400 text-[11px] font-semibold">Active period trend analytics</p>
+              <div className="flex items-center gap-2">
+                <h3 className="text-base font-bold text-slate-600 !mb-0">Sales Trend (7 Days)</h3>
+                {isDemo && (
+                  <span className="hidden sm:inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
+                    <Sparkles size={10} /> Sample Curve
+                  </span>
+                )}
+              </div>
+              <p className="text-slate-400 text-[11px] font-semibold mt-0.5">
+                {isDemo ? "Sample illustrative projection • Start billing to see real sales curves" : "Active period trend analytics"}
+              </p>
             </div>
 
             {/* Filter Pill tabs */}
@@ -736,7 +788,14 @@ const DashboardFull = () => {
         <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm xl:col-span-1 flex flex-col justify-between">
           <div>
             <div className="flex justify-between items-center mb-4">
-              <h3 className="text-sm font-bold text-slate-600">Top Selling Products</h3>
+              <div className="flex items-center gap-1.5">
+                <h3 className="text-sm font-bold text-slate-600 !mb-0">Top Selling Products</h3>
+                {isDemo && (
+                  <span className="text-[9px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+                    Sample
+                  </span>
+                )}
+              </div>
               <button onClick={() => navigate('/Product/list')} className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800">View All</button>
             </div>
 
@@ -776,6 +835,14 @@ const DashboardFull = () => {
                     </div>
                   </div>
                 ))
+              )}
+              {isDemo && (
+                <div className="mt-2.5 p-2 rounded-xl bg-indigo-50/70 border border-indigo-100/80 text-center">
+                  <p className="text-[10px] text-indigo-900 font-semibold mb-1">No items sold yet for this period</p>
+                  <button onClick={() => navigate('/billing/pos')} className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 inline-flex items-center gap-1 cursor-pointer">
+                    Ring up products in POS <ArrowUpRight size={12} />
+                  </button>
+                </div>
               )}
             </div>
           </div>
@@ -885,7 +952,14 @@ const DashboardFull = () => {
         {/* 5. Payment Methods */}
         <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm xl:col-span-1 flex flex-col justify-between">
           <div>
-            <h3 className="text-sm font-bold text-slate-600 mb-2">Payment Methods</h3>
+            <div className="flex justify-between items-center mb-2">
+              <h3 className="text-sm font-bold text-slate-600 !mb-0">Payment Methods</h3>
+              {isDemo && (
+                <span className="text-[9px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+                  Sample
+                </span>
+              )}
+            </div>
 
             {/* Donut chart and legend side by side */}
             <div style={{ height: 144, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }} className="mt-2 select-none">
@@ -979,7 +1053,21 @@ const DashboardFull = () => {
                   </div>
                 ))
               ) : (
-                <Empty description="No recent bills" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+                <div className="flex flex-col items-center justify-center py-8 px-4 text-center">
+                  <div className="w-12 h-12 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 mb-2.5">
+                    <ShoppingCart size={22} />
+                  </div>
+                  <p className="text-sm font-bold text-slate-700 mb-1">No Orders Created Yet</p>
+                  <p className="text-xs text-slate-400 max-w-xs mb-3">
+                    Start billing in POS to generate your live order history and transaction audit trail.
+                  </p>
+                  <button
+                    onClick={() => navigate('/billing/pos')}
+                    className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition active:scale-95 cursor-pointer"
+                  >
+                    <Plus size={14} /> Start POS Billing
+                  </button>
+                </div>
               )}
             </div>
           </div>
@@ -989,7 +1077,14 @@ const DashboardFull = () => {
         <div className="bg-white rounded-2xl border border-slate-100 p-6 shadow-sm flex flex-col justify-between h-96">
           <div>
             <div className="flex justify-between items-center mb-4">
-              <h3 className="text-base font-bold text-slate-600">Top Customers</h3>
+              <div className="flex items-center gap-1.5">
+                <h3 className="text-base font-bold text-slate-600 !mb-0">Top Customers</h3>
+                {isDemo && (
+                  <span className="text-[9px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+                    Sample
+                  </span>
+                )}
+              </div>
               <button onClick={() => navigate('/customer/list')} className="text-sm font-bold text-indigo-600 hover:text-indigo-800">View All</button>
             </div>
 
@@ -1022,7 +1117,14 @@ const DashboardFull = () => {
         <div className="bg-white rounded-2xl border border-slate-100 p-6 shadow-sm flex flex-col justify-between h-96">
           <div>
             <div className="flex justify-between items-center mb-4">
-              <h3 className="text-base font-bold text-slate-600">Employee Performance</h3>
+              <div className="flex items-center gap-1.5">
+                <h3 className="text-base font-bold text-slate-600 !mb-0">Employee Performance</h3>
+                {isDemo && (
+                  <span className="text-[9px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+                    Sample
+                  </span>
+                )}
+              </div>
               <button className="text-sm font-bold text-indigo-600 hover:text-indigo-800">View All</button>
             </div>
 

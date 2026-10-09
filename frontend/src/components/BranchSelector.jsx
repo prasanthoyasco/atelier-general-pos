@@ -17,7 +17,7 @@ const BranchSelector = ({ className = '' }) => {
     <Select
       value={selectedBranch?.id}
       onChange={changeBranch}
-      className={`w-32 sm:w-48 ${className}`}
+      className={`w-28 sm:w-48 max-w-[125px] sm:max-w-none ${className}`}
       placeholder="Select Branch"
     >
       {/* Add "All" option for multi-branch users */}

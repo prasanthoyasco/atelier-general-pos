@@ -10,7 +10,7 @@ const getBranchId = () => {
 
 const billingService = {
   async getAll(params = {}) {
-    const branchId = getBranchId();
+    const branchId = params?.branch_id || getBranchId();
     const queryParams = { ...params };
 
     if (branchId) {
@@ -21,9 +21,9 @@ const billingService = {
     return res.data;
   },
 
-  async getById(id) {
-    const branchId = getBranchId();
-    const queryParams = {};
+  async getById(id, params = {}) {
+    const branchId = params?.branch_id || getBranchId();
+    const queryParams = { ...params };
 
     if (branchId) {
       queryParams.branch_id = branchId;
@@ -33,12 +33,12 @@ const billingService = {
     return res.data;
   },
 
-  async get(id) {
-    return this.getById(id);
+  async get(id, params = {}) {
+    return this.getById(id, params);
   },
 
   async create(data) {
-    const branchId = getBranchId();
+    const branchId = data?.branch_id || getBranchId();
 
     if (!branchId) {
       throw new Error("Please select a specific branch to create billing");
@@ -49,7 +49,7 @@ const billingService = {
   },
 
   async update(id, data) {
-    const branchId = getBranchId();
+    const branchId = data?.branch_id || getBranchId();
     const payload = { ...data };
 
     if (branchId) {
@@ -60,9 +60,9 @@ const billingService = {
     return res.data;
   },
 
-  async remove(id) {
-    const branchId = getBranchId();
-    const queryParams = {};
+  async remove(id, params = {}) {
+    const branchId = params?.branch_id || getBranchId();
+    const queryParams = { ...params };
 
     if (branchId) {
       queryParams.branch_id = branchId;
@@ -73,7 +73,7 @@ const billingService = {
   },
 
   async getKitchenQueue(params = {}) {
-    const branchId = getBranchId();
+    const branchId = params?.branch_id || getBranchId();
     const queryParams = { ...params };
 
     if (branchId) {
@@ -84,8 +84,8 @@ const billingService = {
     return res.data;
   },
 
-  async updateKOTStatus(id, status, cancelReason = null) {
-    const branchId = getBranchId();
+  async updateKOTStatus(id, status, cancelReason = null, customBranchId = null) {
+    const branchId = customBranchId || getBranchId();
     const payload = { kot_status: status };
     if (branchId) {
       payload.branch_id = branchId;

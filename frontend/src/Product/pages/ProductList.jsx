@@ -315,7 +315,7 @@ const ProductList = () => {
   ];
 
   return (
-    <div className="p-4">
+    <div className="p-3 sm:p-4 lg:p-6 pb-28 md:pb-6 relative">
       <div className="flex flex-row items-center gap-2 mb-4 flex-wrap">
         <Search
           placeholder="Search products..."
@@ -328,12 +328,23 @@ const ProductList = () => {
           onChange={handleInputChange}
           enterButton
           allowClear
-          style={{ flex: "1 1 180px", minWidth: 140, maxWidth: 300 }}
+          className="w-full sm:w-auto"
+          style={{ flex: "1 1 200px", minWidth: 160 }}
         />
-        <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate("/Product/add")}>
+        <Button 
+          type="primary" 
+          icon={<PlusOutlined />} 
+          onClick={() => navigate("/Product/add")}
+          className="min-h-[40px] rounded-xl font-semibold hidden sm:inline-flex items-center"
+        >
           Add Product
         </Button>
-        <Button type="default" icon={<DownloadOutlined />} onClick={downloadAllQRPDF}>
+        <Button 
+          type="default" 
+          icon={<DownloadOutlined />} 
+          onClick={downloadAllQRPDF}
+          className="min-h-[40px] rounded-xl font-semibold"
+        >
           QR PDF
         </Button>
         <Button
@@ -341,81 +352,108 @@ const ProductList = () => {
           icon={<DownloadOutlined />}
           onClick={downloadLabelsPDF}
           disabled={selectedRowKeys.length === 0}
+          className="min-h-[40px] rounded-xl font-semibold"
         >
           Labels {selectedRowKeys.length > 0 ? `(${selectedRowKeys.length})` : ""}
         </Button>
       </div>
 
       {!screens.md ? (
-        <List
-          grid={{ gutter: 16, column: 1 }}
-          dataSource={products}
-          loading={loading}
-          pagination={{
-            ...pagination,
-            onChange: (page, pageSize) => {
-              setPagination((prev) => ({ ...prev, current: page, pageSize }));
-              fetchProducts({ current: page, pageSize });
-            },
-          }}
-          renderItem={(item) => (
-            <List.Item key={item.id}>
-              <Card
-                title={item.product_name}
-                extra={
-                  <Space>
-                    <Button
-                      type="text"
-                      icon={<EditOutlined />}
-                      onClick={() => navigate(`/Product/edit/${item.id}`)}
-                    />
-                    <Popconfirm title="Are you sure you want to delete this product?" onConfirm={() => handleDelete(item.id)} okText="Yes" cancelText="No">
-                      <Button type="text" danger icon={<DeleteOutlined />} />
-                    </Popconfirm>
-                  </Space>
-                }
-              >
-                <div className="flex justify-between mb-2">
-                  <span className="text-gray-500">Code:</span>
-                  <span className="font-medium">{item.product_code}</span>
-                </div>
-                <div className="flex justify-between mb-2">
-                  <span className="text-gray-500">Price:</span>
-                  <span className="font-medium">₹{item.selling_price}</span>
-                </div>
-                <div className="flex justify-between mb-2">
-                  <span className="text-gray-500">Category:</span>
-                  <span className="font-medium">{item.category_name}</span>
-                </div>
+        <div className="space-y-3">
+          <List
+            grid={{ gutter: 12, column: 1 }}
+            dataSource={products}
+            loading={loading}
+            pagination={{
+              ...pagination,
+              onChange: (page, pageSize) => {
+                setPagination((prev) => ({ ...prev, current: page, pageSize }));
+                fetchProducts({ current: page, pageSize });
+              },
+            }}
+            renderItem={(item) => (
+              <List.Item key={item.id} className="!mb-3">
+                <div className="bg-white rounded-2xl border border-slate-200/90 p-4 shadow-xs hover:shadow-md transition space-y-3">
+                  {/* Top: Product Name, Code, Actions */}
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <h3 className="text-base font-black text-slate-800 !mb-0 tracking-tight leading-snug">
+                        {item.product_name}
+                      </h3>
+                      <span className="text-xs font-mono text-slate-400 font-semibold">
+                        {item.product_code}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        onClick={() => navigate(`/Product/edit/${item.id}`)}
+                        className="w-10 h-10 rounded-xl bg-slate-50 hover:bg-indigo-50 text-slate-600 hover:text-indigo-600 flex items-center justify-center transition active:scale-95 cursor-pointer"
+                        aria-label="Edit product"
+                      >
+                        <EditOutlined style={{ fontSize: 16 }} />
+                      </button>
+                      <Popconfirm 
+                        title="Delete product?" 
+                        description="Are you sure you want to delete this product?"
+                        onConfirm={() => handleDelete(item.id)} 
+                        okText="Yes" 
+                        cancelText="No"
+                      >
+                        <button
+                          className="w-10 h-10 rounded-xl bg-slate-50 hover:bg-red-50 text-slate-600 hover:text-red-600 flex items-center justify-center transition active:scale-95 cursor-pointer"
+                          aria-label="Delete product"
+                        >
+                          <DeleteOutlined style={{ fontSize: 16 }} />
+                        </button>
+                      </Popconfirm>
+                    </div>
+                  </div>
 
-                <div className="flex justify-between items-center mt-4 pt-4 border-t border-gray-100">
-                  <div ref={(el) => (qrRefs.current[item.id] = el)}>
-                    <QRCodeCanvas value={item.product_code || ""} size={64} level="H" />
+                  {/* Metadata Row: Price & Category */}
+                  <div className="flex items-center justify-between py-2 border-y border-slate-100">
+                    <div>
+                      <span className="text-[11px] text-slate-400 font-bold uppercase tracking-wider block">Selling Price</span>
+                      <span className="text-base font-black text-emerald-600">₹{item.selling_price}</span>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-[11px] text-slate-400 font-bold uppercase tracking-wider block">Category</span>
+                      <span className="text-xs font-bold text-slate-700 bg-slate-100 px-2.5 py-1 rounded-lg">
+                        {item.category_name || "General"}
+                      </span>
+                    </div>
                   </div>
-                  <Button
-                    size="small"
-                    icon={<DownloadOutlined />}
-                    onClick={() => downloadQR(item.id, item.product_code)}
-                  >
-                    Download QR
-                  </Button>
-                </div>
-                <div className="flex justify-between items-center mt-3 pt-3 border-t border-gray-100">
-                  <div ref={(el) => (barcodeRefs.current[item.id] = el)}>
-                    <Barcode value={item.product_code || "000000"} width={1.2} height={40} fontSize={10} />
+
+                  {/* QR & Barcode Section */}
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    <div className="flex flex-col items-center p-2 rounded-xl bg-slate-50 border border-slate-100">
+                      <div ref={(el) => (qrRefs.current[item.id] = el)} className="mb-1.5">
+                        <QRCodeCanvas value={item.product_code || ""} size={54} level="H" />
+                      </div>
+                      <button
+                        onClick={() => downloadQR(item.id, item.product_code)}
+                        className="w-full py-1.5 px-2 bg-white hover:bg-slate-100 border border-slate-200 rounded-lg text-[11px] font-bold text-slate-700 flex items-center justify-center gap-1 active:scale-95 transition cursor-pointer"
+                      >
+                        <DownloadOutlined /> QR
+                      </button>
+                    </div>
+
+                    <div className="flex flex-col items-center justify-between p-2 rounded-xl bg-slate-50 border border-slate-100">
+                      <div ref={(el) => (barcodeRefs.current[item.id] = el)} className="mb-1 overflow-hidden max-w-full flex justify-center">
+                        <Barcode value={item.product_code || "000000"} width={1} height={28} fontSize={9} />
+                      </div>
+                      <button
+                        onClick={() => downloadBarcode(item.id, item.product_code)}
+                        className="w-full py-1.5 px-2 bg-white hover:bg-slate-100 border border-slate-200 rounded-lg text-[11px] font-bold text-slate-700 flex items-center justify-center gap-1 active:scale-95 transition cursor-pointer"
+                      >
+                        <DownloadOutlined /> Barcode
+                      </button>
+                    </div>
                   </div>
-                  <Button
-                    size="small"
-                    icon={<DownloadOutlined />}
-                    onClick={() => downloadBarcode(item.id, item.product_code)}
-                  >
-                    Download Barcode
-                  </Button>
                 </div>
-              </Card>
-            </List.Item>
-          )}
-        />
+              </List.Item>
+            )}
+          />
+        </div>
       ) : (
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
           <Table
@@ -447,6 +485,15 @@ const ProductList = () => {
           />
         </div>
       )}
+
+      {/* Mobile Floating Action Button (FAB) */}
+      <button
+        onClick={() => navigate("/Product/add")}
+        aria-label="Add Product"
+        className="fixed bottom-24 right-5 md:hidden z-30 w-14 h-14 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white rounded-full shadow-2xl flex items-center justify-center cursor-pointer transition shadow-indigo-600/30"
+      >
+        <PlusOutlined style={{ fontSize: 22 }} />
+      </button>
     </div>
   );
 };

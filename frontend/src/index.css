@@ -28,6 +28,16 @@ body {
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Safe area padding utilities for mobile & tablet */
+.pb-safe {
+  padding-bottom: max(0.75rem, env(safe-area-inset-bottom, 0px));
+}
+
+.pt-safe {
+  padding-top: max(0.75rem, env(safe-area-inset-top, 0px));
 }
 
 button {
@@ -158,4 +168,16 @@ body {
 .pos-page-font,
 .pos-page-font * {
   font-family: 'DM Sans', sans-serif !important;
+}
+
+/* Prevent iOS Safari auto-zoom on form inputs below 768px */
+@media screen and (max-width: 767px) {
+  input,
+  select,
+  textarea,
+  .ant-input,
+  .ant-select-selector,
+  .ant-input-number-input {
+    font-size: 16px !important;
+  }
 }

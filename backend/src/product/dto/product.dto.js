@@ -56,6 +56,8 @@ export const createProductSchema = z.object({
   barcode: z.string().max(100, "Barcode cannot exceed 100 characters").optional(),
   sku: z.string().max(100, "SKU cannot exceed 100 characters").optional(),
   image_url: z.string().url("Invalid image URL").max(255).optional(),
+  kitchen_id: z.string().uuid("Kitchen ID must be a valid UUID").optional().nullable(),
+  addon_ids: z.array(z.string().uuid()).optional().nullable(),
   status: z.enum(["active", "inactive", "out_of_stock"]).optional().default("active"),
   is_active: z.boolean().optional().default(true),
 });

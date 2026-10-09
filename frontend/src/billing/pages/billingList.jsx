@@ -451,7 +451,7 @@ function BillingList() {
   };
 
   return (
-    <div className="p-4 min-h-screen">
+    <div className="p-3 sm:p-4 lg:p-6 pb-28 md:pb-6 relative min-h-screen">
       {/* Filters + Controls */}
       {/* Filters + Controls */}
       <div className="flex flex-col justify-between items-start gap-4 mb-4">
@@ -524,7 +524,7 @@ function BillingList() {
               <Popover
                 trigger="click"
                 placement="bottomLeft"
-                overlayInnerStyle={{ padding: 12, borderRadius: 14, minWidth: 220 }}
+                styles={{ body: { padding: 12, borderRadius: 14, minWidth: 220 } }}
                 content={
                   <div>
                     <div style={{ fontSize: 11, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>
@@ -720,7 +720,7 @@ function BillingList() {
                 const pmLabel = isSplit ? "Split" : (item.payment_method || "—").replace(/_/g, " ");
                 return (
                   <List.Item key={item.id}>
-                    <Card bodyStyle={{ padding: 12 }} style={cardStyles.cardWrap}>
+                    <Card styles={{ body: { padding: 12 } }} style={cardStyles.cardWrap}>
                       <div style={cardStyles.headerRow}>
                         <div style={cardStyles.leftMeta}>
                           <div style={cardStyles.avatarSquare("#0ea5a4")}>{initials}</div>
@@ -892,7 +892,7 @@ function BillingList() {
           </Space>,
         ]}
         width={980}
-        bodyStyle={{ maxHeight: "80vh", overflowY: "auto", padding: 0, scrollbarWidth: "none" }}
+        styles={{ body: { maxHeight: "80vh", overflowY: "auto", padding: 0, scrollbarWidth: "none" } }}
       >
 
 
@@ -1036,6 +1036,15 @@ function BillingList() {
           </div>
         </div>
       </Modal>
+
+      {/* Mobile Floating Action Button (FAB) */}
+      <button
+        onClick={() => navigate("/billing/pos")}
+        aria-label="New Bill"
+        className="fixed bottom-24 right-5 md:hidden z-30 w-14 h-14 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white rounded-full shadow-2xl flex items-center justify-center cursor-pointer transition shadow-indigo-600/30"
+      >
+        <PlusOutlined style={{ fontSize: 22 }} />
+      </button>
     </div>
   );
 }

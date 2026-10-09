@@ -17,6 +17,7 @@ import Payslip from './src/employee/models/payslip.model.js';
 import ShiftRule from './src/employee/models/shiftrule.model.js';
 import LeavePolicy from './src/employee/models/leavepolicy.model.js';
 import Advance from './src/employee/models/advance.model.js';
+import Table from './src/billing/models/table.model.js';
 import './src/employee/models/associations.js';
 const PORT = process.env.PORT || 10000;
 

@@ -31,6 +31,21 @@ export const authenticateBranch = (allowMultipleBranches = false) => async (req,
 
         // Super admin / Admin has global access to all branches
         if (isSuperAdminOrAdmin) {
+            if (!branchId && allowMultipleBranches) {
+                const allActiveBranches = await Branch.findAll({ where: { is_active: true } });
+                req.branchContext = {
+                    multipleBranches: true,
+                    branches: allActiveBranches.map(b => ({
+                        branchId: b.id,
+                        branchName: b.branch_name,
+                        branchCode: b.branch_code,
+                        roleId: req.user.role_id,
+                        roleName: req.user.role_name || 'super admin'
+                    }))
+                };
+                return next();
+            }
+
             if (!branchId) {
                 const defaultBranch = await Branch.findOne({ where: { is_active: true } });
                 if (defaultBranch) branchId = defaultBranch.id;

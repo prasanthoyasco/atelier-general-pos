@@ -16,7 +16,7 @@ const addonController = {
   async getAll(req, res) {
     try {
       const branchId = req.branchContext?.branchId || req.query.branch_id;
-      const addons = await addonService.getAll(branchId);
+      const addons = await addonService.getAll(branchId, req.query);
       res.status(200).json({ success: true, data: addons });
     } catch (error) {
       res.status(500).json({ success: false, message: error.message });

@@ -4,8 +4,9 @@ import {
   Volume2, VolumeX, Maximize, Minimize, RefreshCw, ChefHat, Calendar,
   CheckCircle, Play, Ban, Armchair, Sparkles, Heart
 } from "lucide-react";
-import { message, Modal, Input } from "antd";
+import { message, Modal, Input, Select } from "antd";
 import billingService from "../service/billingService.js";
+import productService from "../../Product/services/productService.js";
 import { useBranch } from "../../context/BranchContext.jsx";
 import FoodThumbnail from "../utils/FoodThumbnail.jsx";
 import { broadcastKOTEvent, kotChannel } from "../utils/kotBroadcast.js";
@@ -74,14 +75,41 @@ export default function KOTKitchenDashboard() {
   // Mobile Active Tab: 'new' | 'preparing' | 'ready'
   const [mobileActiveTab, setMobileActiveTab] = useState("new");
 
-  // Kitchen Filter State
-  const [selectedKitchen, setSelectedKitchen] = useState("All");
+  // Kitchen Filter State (persisted in localStorage for dedicated station kiosks)
+  const [selectedKitchen, setSelectedKitchen] = useState(() => {
+    return localStorage.getItem("kot_selected_kitchen") || "All";
+  });
+  const [masterKitchens, setMasterKitchens] = useState([]);
 
-  // Derived kitchens from active tickets
-  const availableKitchens = Array.from(new Set(tickets.map(t => t.kitchen_name))).filter(Boolean);
-  if (selectedKitchen !== "All" && !availableKitchens.includes(selectedKitchen) && tickets.length > 0) {
-      // Keep selection if possible, otherwise it just shows empty state, which is fine
-  }
+  // Fetch registered kitchens from master
+  useEffect(() => {
+    productService
+      .getKitchens()
+      .then((res) => {
+        const list = res?.data?.data || res?.data || [];
+        if (Array.isArray(list)) {
+          setMasterKitchens(list.map((k) => k.name || k.kitchen_name || k));
+        }
+      })
+      .catch((err) => console.warn("Failed to fetch master kitchens:", err));
+  }, []);
+
+  // Combined list of kitchens from master and active tickets
+  const availableKitchens = Array.from(
+    new Set([
+      ...masterKitchens,
+      ...tickets.map((t) => t.kitchen_name).filter(Boolean),
+    ])
+  );
+
+  const handleKitchenChange = (val) => {
+    setSelectedKitchen(val);
+    try {
+      localStorage.setItem("kot_selected_kitchen", val);
+    } catch (e) {
+      // Ignore storage errors
+    }
+  };
 
   // Filtered tickets
   const filteredTickets = selectedKitchen === "All" 
@@ -223,7 +251,12 @@ export default function KOTKitchenDashboard() {
           }
         }
 
-        if (eventType === "NEW_KOT_ORDER" || eventType === "KOT_SERVED" || eventType === "KOT_STATUS_UPDATED") {
+        if (eventType === "NEW_KOT_ORDER") {
+          if (soundEnabled) {
+            playNewOrderNotification();
+          }
+          fetchQueue(false);
+        } else if (eventType === "KOT_SERVED" || eventType === "KOT_STATUS_UPDATED") {
           fetchQueue(false);
         }
       };
@@ -276,8 +309,16 @@ export default function KOTKitchenDashboard() {
     );
 
     try {
+      const ticketObj = tickets.find((t) => t.id === ticketId);
       await billingService.updateKOTStatus(ticketId, nextStatus);
-      broadcastKOTEvent("KOT_STATUS_UPDATED", { id: ticketId, status: nextStatus });
+      broadcastKOTEvent("KOT_STATUS_UPDATED", {
+        id: ticketId,
+        status: nextStatus,
+        kot_number: ticketObj?.kot_number,
+        table_no: ticketObj?.table_no || (ticketObj?.counter_no ? ticketObj.counter_no.replace("Counter ", "Table ") : "Table"),
+        billing_no: ticketObj?.billing_no,
+        items_count: ticketObj?.items?.length || 0,
+      });
       if (nextStatus === "preparing") message.success("Started cooking!");
       else if (nextStatus === "ready") message.success("Marked ready to serve!");
       else if (nextStatus === "served") message.success("Order served & completed!");
@@ -339,26 +380,26 @@ export default function KOTKitchenDashboard() {
   return (
     <div className="min-h-screen w-full bg-[#F4F6F9] flex flex-col font-sans select-none overflow-x-hidden">
       {/* 1. TOP HEADER BAR */}
-      <header className="h-18 bg-white border-b border-slate-200/90 px-4 md:px-6 flex items-center justify-between shrink-0 shadow-2xs z-20">
+      <header className="h-16 md:h-18 bg-white border-b border-slate-200/90 px-3 md:px-6 flex items-center justify-between shrink-0 shadow-2xs z-20">
         {/* Left: Chef Hat Logo & Title */}
-        <div className="flex items-center gap-3">
-          <div className="w-11 h-11 rounded-2xl bg-[#EF4444] text-white flex items-center justify-center shadow-sm shadow-red-500/20 shrink-0">
-            <ChefHat size={26} strokeWidth={2.3} />
+        <div className="flex items-center gap-2.5 md:gap-3">
+          <div className="w-10 h-10 md:w-11 md:h-11 rounded-2xl bg-[#EF4444] text-white flex items-center justify-center shadow-sm shadow-red-500/20 shrink-0">
+            <ChefHat size={24} className="md:w-[26px] md:h-[26px]" strokeWidth={2.3} />
           </div>
           <div>
-            <h1 className="text-base md:text-lg font-black text-slate-800 uppercase !mb-0 tracking-tight leading-tight">
+            <h1 className="text-sm md:text-lg font-black text-slate-800 uppercase !mb-0 tracking-tight leading-tight">
               Kitchen Orders
             </h1>
-            <p className="text-xs text-slate-400 !mb-0 font-semibold leading-none">
+            <p className="text-[11px] md:text-xs text-slate-400 !mb-0 font-semibold leading-none truncate max-w-[120px] sm:max-w-none">
               {selectedBranch?.name || "Annaporani Branch"}
             </p>
           </div>
         </div>
 
         {/* Center / Right: Online Status, Date, Clock, Sound, Fullscreen */}
-        <div className="flex items-center gap-3 md:gap-5">
+        <div className="flex items-center gap-2 md:gap-4 lg:gap-5">
           {/* Online badge */}
-          <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-full border border-emerald-200/60">
+          <div className="hidden sm:flex items-center gap-1.5 text-xs font-bold text-emerald-600 bg-emerald-50 px-2.5 py-1.5 rounded-full border border-emerald-200/60">
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
             <span>Online</span>
           </div>
@@ -370,45 +411,49 @@ export default function KOTKitchenDashboard() {
           </div>
 
           {/* Clock */}
-          <div className="hidden sm:flex items-center gap-1.5 text-xs font-bold text-slate-700 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200/80">
+          <div className="hidden md:flex items-center gap-1.5 text-xs font-bold text-slate-700 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200/80">
             <Clock size={14} className="text-slate-400" />
             <span>{dayjs(currentTime).format("hh:mm A")}</span>
           </div>
 
-          {/* Kitchen Filter Dropdown */}
-          <div className="flex items-center gap-2 text-sm font-bold text-slate-700 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200/80">
-            <ChefHat size={16} className="text-slate-500 hidden sm:block" />
-            <select
-                className="bg-transparent border-none outline-none cursor-pointer text-slate-700 font-bold max-w-[120px] sm:max-w-none truncate"
-                value={selectedKitchen}
-                onChange={(e) => setSelectedKitchen(e.target.value)}
-            >
-                <option value="All">All Kitchens</option>
-                {availableKitchens.map(k => (
-                    <option key={k} value={k}>{k}</option>
-                ))}
-            </select>
+          {/* Kitchen Filter Ant Design Select */}
+          <div className="flex items-center">
+            <Select
+              value={selectedKitchen}
+              onChange={handleKitchenChange}
+              popupMatchSelectWidth={false}
+              suffixIcon={<ChefHat size={14} className="text-slate-400" />}
+              className="kot-kitchen-filter-select"
+              style={{ minWidth: 125 }}
+              options={[
+                { value: "All", label: "All Kitchens" },
+                ...availableKitchens.map((k) => ({
+                  value: k,
+                  label: k,
+                })),
+              ]}
+            />
           </div>
 
           {/* Sound Toggle Button (Min 48px) */}
           <button
             onClick={handleToggleSound}
             aria-label="Toggle Sound"
-            className={`min-h-[48px] px-3.5 rounded-xl border flex items-center gap-2 text-xs font-black transition cursor-pointer ${
+            className={`min-h-[44px] md:min-h-[48px] px-2.5 md:px-3.5 rounded-xl border flex items-center gap-1.5 md:gap-2 text-xs font-black transition cursor-pointer active:scale-95 ${
               soundEnabled
                 ? "bg-emerald-50 text-emerald-700 border-emerald-200 shadow-2xs"
                 : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
             }`}
           >
             {soundEnabled ? <Volume2 size={18} /> : <VolumeX size={18} />}
-            <span className="hidden md:inline">{soundEnabled ? "SOUND ON" : "MUTED"}</span>
+            <span className="hidden xl:inline">{soundEnabled ? "SOUND ON" : "MUTED"}</span>
           </button>
 
           {/* Fullscreen Button (Min 48px) */}
           <button
             onClick={toggleFullscreen}
             aria-label="Toggle Fullscreen"
-            className="min-w-[48px] min-h-[48px] rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-slate-600 flex items-center justify-center transition cursor-pointer shadow-2xs"
+            className="min-w-[44px] min-h-[44px] md:min-w-[48px] md:min-h-[48px] rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-slate-600 flex items-center justify-center transition cursor-pointer shadow-2xs active:scale-95"
           >
             {isFullscreen ? <Minimize size={18} /> : <Maximize size={18} />}
           </button>
@@ -416,24 +461,24 @@ export default function KOTKitchenDashboard() {
       </header>
 
       {/* 2. MAIN BODY */}
-      <main className="flex-1 p-3 md:p-6 overflow-hidden min-h-0 flex flex-col">
+      <main className="flex-1 p-2.5 md:p-4 lg:p-6 overflow-hidden min-h-0 flex flex-col">
         {/* ================= DESKTOP & TABLET: 3-COLUMN KANBAN BOARD ================= */}
-        <div className="hidden md:grid md:grid-cols-3 gap-4 lg:gap-6 flex-1 min-h-0">
+        <div className="hidden md:grid md:grid-cols-3 gap-3 lg:gap-5 flex-1 min-h-0">
           {/* COLUMN 1: NEW ORDERS (Red Theme) */}
-          <div className="flex flex-col bg-[#FEF2F2] border border-red-200/80 rounded-3xl overflow-hidden shadow-sm">
+          <div className="flex flex-col bg-[#FEF2F2] border border-red-200/80 rounded-2xl md:rounded-3xl overflow-hidden shadow-sm">
             {/* Header Banner */}
-            <div className="bg-[#EF4444] px-5 py-3.5 flex items-center justify-between text-white shrink-0 shadow-xs">
-              <div className="flex items-center gap-2.5">
-                <Bell size={22} strokeWidth={2.4} />
-                <h2 className="text-base !font-bold tracking-wide !mb-0 uppercase">New Orders</h2>
+            <div className="bg-[#EF4444] px-4 md:px-5 py-3 md:py-3.5 flex items-center justify-between text-white shrink-0 shadow-xs">
+              <div className="flex items-center gap-2">
+                <Bell size={20} className="md:w-[22px] md:h-[22px]" strokeWidth={2.4} />
+                <h2 className="text-sm md:text-base !font-bold tracking-wide !mb-0 uppercase">New Orders</h2>
               </div>
-              <span className="w-8 h-8 rounded-full bg-white text-[#EF4444] font-black text-sm flex items-center justify-center shadow-xs">
+              <span className="w-7 h-7 md:w-8 md:h-8 rounded-full bg-white text-[#EF4444] font-black text-xs md:text-sm flex items-center justify-center shadow-xs">
                 {pendingTickets.length}
               </span>
             </div>
 
             {/* Column Cards List */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0">
+            <div className="flex-1 overflow-y-auto p-2.5 md:p-3.5 lg:p-4 space-y-3 md:space-y-4 min-h-0">
               {pendingTickets.length === 0 ? (
                 <div className="h-full flex flex-col items-center justify-center text-red-300 py-16 text-center">
                   <Bell size={42} strokeWidth={1.5} className="mb-2 opacity-50" />
@@ -546,20 +591,20 @@ export default function KOTKitchenDashboard() {
           </div>
 
           {/* COLUMN 2: PREPARING (Amber Theme) */}
-          <div className="flex flex-col bg-[#FFFBEB] border border-amber-200/80 rounded-3xl overflow-hidden shadow-sm">
+          <div className="flex flex-col bg-[#FFFBEB] border border-amber-200/80 rounded-2xl md:rounded-3xl overflow-hidden shadow-sm">
             {/* Header Banner */}
-            <div className="bg-[#F59E0B] px-5 py-3.5 flex items-center justify-between text-white shrink-0 shadow-xs">
-              <div className="flex items-center gap-2.5">
-                <CookingPot size={22} strokeWidth={2.4} />
-                <h2 className="text-base !font-bold tracking-wide !mb-0 uppercase">Preparing</h2>
+            <div className="bg-[#F59E0B] px-4 md:px-5 py-3 md:py-3.5 flex items-center justify-between text-white shrink-0 shadow-xs">
+              <div className="flex items-center gap-2">
+                <CookingPot size={20} className="md:w-[22px] md:h-[22px]" strokeWidth={2.4} />
+                <h2 className="text-sm md:text-base !font-bold tracking-wide !mb-0 uppercase">Preparing</h2>
               </div>
-              <span className="w-8 h-8 rounded-full bg-white text-[#F59E0B] font-black text-sm flex items-center justify-center shadow-xs">
+              <span className="w-7 h-7 md:w-8 md:h-8 rounded-full bg-white text-[#F59E0B] font-black text-xs md:text-sm flex items-center justify-center shadow-xs">
                 {preparingTickets.length}
               </span>
             </div>
 
             {/* Column Cards List */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0">
+            <div className="flex-1 overflow-y-auto p-2.5 md:p-3.5 lg:p-4 space-y-3 md:space-y-4 min-h-0">
               {preparingTickets.length === 0 ? (
                 <div className="h-full flex flex-col items-center justify-center text-amber-300 py-16 text-center">
                   <CookingPot size={42} strokeWidth={1.5} className="mb-2 opacity-50" />
@@ -573,11 +618,11 @@ export default function KOTKitchenDashboard() {
                   return (
                     <div
                       key={order.id}
-                      className="bg-white rounded-2xl border border-slate-200/80 p-4.5 space-y-3.5 shadow-sm hover:border-slate-300 transition-all duration-200"
+                      className="bg-white rounded-2xl border border-slate-200/80 p-3.5 lg:p-4.5 space-y-3 lg:space-y-3.5 shadow-sm hover:border-slate-300 transition-all duration-200"
                     >
                       {/* Top row: KOT # + Elapsed Cooking Timer */}
                       <div className="flex items-center justify-between">
-                        <span className="text-base font-black text-slate-900 tracking-tight">
+                        <span className="text-sm md:text-base font-black text-slate-900 tracking-tight">
                           {order.kot_number ? `KOT #${order.kot_number}` : order.billing_no}
                           {order.kitchen_name && selectedKitchen === "All" && (
                             <span className="ml-2 text-[10px] bg-amber-50 text-amber-600 px-1.5 py-0.5 rounded border border-amber-200">
@@ -603,14 +648,14 @@ export default function KOTKitchenDashboard() {
                       <div className="space-y-2 pt-1 border-t border-slate-100">
                         {order.items?.map((item, idx) => (
                           <div key={idx} className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-full overflow-hidden border border-slate-100 shrink-0 bg-slate-50 flex items-center justify-center">
+                            <div className="w-9 h-9 md:w-10 md:h-10 rounded-full overflow-hidden border border-slate-100 shrink-0 bg-slate-50 flex items-center justify-center">
                               <FoodThumbnail
                                 src={item.image_url}
                                 alt={item.product_name}
                                 fallbackSize="sm"
                               />
                             </div>
-                            <span className="text-sm font-bold text-slate-800 truncate">
+                            <span className="text-xs md:text-sm font-bold text-slate-800 truncate">
                               {item.quantity} × {item.product_name}
                             </span>
                           </div>
@@ -621,7 +666,7 @@ export default function KOTKitchenDashboard() {
                       <button
                         onClick={() => handleTransition(order.id, "ready")}
                         disabled={actionLoadingId === order.id}
-                        className="w-full min-h-[56px] bg-[#FEF3C7] hover:bg-amber-200 active:scale-[0.99] text-amber-950 border border-amber-300 rounded-xl font-black text-sm uppercase tracking-wide flex items-center justify-center gap-2 transition cursor-pointer shadow-2xs disabled:opacity-50"
+                        className="w-full min-h-[52px] md:min-h-[56px] bg-[#FEF3C7] hover:bg-amber-200 active:scale-[0.98] text-amber-950 border border-amber-300 rounded-xl font-black text-xs md:text-sm uppercase tracking-wide flex items-center justify-center gap-2 transition cursor-pointer shadow-2xs disabled:opacity-50"
                       >
                         <CheckCircle size={18} strokeWidth={2.5} />
                         <span>Mark Ready</span>
@@ -634,24 +679,24 @@ export default function KOTKitchenDashboard() {
           </div>
 
           {/* COLUMN 3: READY TO SERVE (Emerald Green Theme) */}
-          <div className="flex flex-col bg-[#F0FDF4] border border-emerald-200/80 rounded-3xl overflow-hidden shadow-sm">
+          <div className="flex flex-col bg-[#F0FDF4] border border-emerald-200/80 rounded-2xl md:rounded-3xl overflow-hidden shadow-sm">
             {/* Header Banner */}
-            <div className="bg-[#10B981] px-5 py-3.5 flex items-center justify-between text-white shrink-0 shadow-xs">
-              <div className="flex items-center gap-2.5">
-                <UtensilsCrossed size={22} strokeWidth={2.4} />
-                <h2 className="text-base !font-bold tracking-wide !mb-0 uppercase">Ready to Serve</h2>
+            <div className="bg-[#10B981] px-4 md:px-5 py-3 md:py-3.5 flex items-center justify-between text-white shrink-0 shadow-xs">
+              <div className="flex items-center gap-2">
+                <UtensilsCrossed size={20} className="md:w-[22px] md:h-[22px]" strokeWidth={2.4} />
+                <h2 className="text-sm md:text-base !font-bold tracking-wide !mb-0 uppercase">Ready to Serve</h2>
               </div>
-              <span className="w-8 h-8 rounded-full bg-white text-[#10B981] font-black text-sm flex items-center justify-center shadow-xs">
+              <span className="w-7 h-7 md:w-8 md:h-8 rounded-full bg-white text-[#10B981] font-black text-xs md:text-sm flex items-center justify-center shadow-xs">
                 {readyTickets.length}
               </span>
             </div>
 
             {/* Column Cards List */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0">
+            <div className="flex-1 overflow-y-auto p-2.5 md:p-3.5 lg:p-4 space-y-3 md:space-y-4 min-h-0">
               {readyTickets.length === 0 ? (
                 <div className="h-full flex flex-col items-center justify-center text-emerald-400/80 py-16 text-center">
-                  <div className="w-16 h-16 rounded-full border-2 border-dashed border-emerald-300 flex items-center justify-center mb-3">
-                    <ChefHat size={32} className="text-emerald-500 opacity-60" />
+                  <div className="w-14 h-14 md:w-16 md:h-16 rounded-full border-2 border-dashed border-emerald-300 flex items-center justify-center mb-3">
+                    <ChefHat size={30} className="text-emerald-500 opacity-60" />
                   </div>
                   <p className="text-sm font-bold text-slate-700">No more orders</p>
                   <div className="flex items-center justify-center gap-1 text-xs text-slate-400 mt-0.5">
@@ -666,11 +711,11 @@ export default function KOTKitchenDashboard() {
                   return (
                     <div
                       key={order.id}
-                      className="bg-white rounded-2xl border border-slate-200/80 p-4.5 space-y-3.5 shadow-sm hover:border-slate-300 transition-all duration-200"
+                      className="bg-white rounded-2xl border border-slate-200/80 p-3.5 lg:p-4.5 space-y-3 lg:space-y-3.5 shadow-sm hover:border-slate-300 transition-all duration-200"
                     >
                       {/* Top row: KOT # + Ready badge */}
                       <div className="flex items-center justify-between">
-                        <span className="text-base font-black text-slate-900 tracking-tight">
+                        <span className="text-sm md:text-base font-black text-slate-900 tracking-tight">
                           {order.kot_number ? `KOT #${order.kot_number}` : order.billing_no}
                           {order.kitchen_name && selectedKitchen === "All" && (
                             <span className="ml-2 text-[10px] bg-emerald-50 text-emerald-600 px-1.5 py-0.5 rounded border border-emerald-200">
@@ -700,14 +745,14 @@ export default function KOTKitchenDashboard() {
                       <div className="space-y-2 pt-1 border-t border-slate-100">
                         {order.items?.map((item, idx) => (
                           <div key={idx} className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-full overflow-hidden border border-slate-100 shrink-0 bg-slate-50 flex items-center justify-center">
+                            <div className="w-9 h-9 md:w-10 md:h-10 rounded-full overflow-hidden border border-slate-100 shrink-0 bg-slate-50 flex items-center justify-center">
                               <FoodThumbnail
                                 src={item.image_url}
                                 alt={item.product_name}
                                 fallbackSize="sm"
                               />
                             </div>
-                            <span className="text-sm font-bold text-slate-800 truncate">
+                            <span className="text-xs md:text-sm font-bold text-slate-800 truncate">
                               {item.quantity} × {item.product_name}
                             </span>
                           </div>
@@ -718,7 +763,7 @@ export default function KOTKitchenDashboard() {
                       <button
                         onClick={() => handleTransition(order.id, "served")}
                         disabled={actionLoadingId === order.id}
-                        className="w-full min-h-[56px] bg-[#059669] hover:bg-emerald-700 active:scale-[0.99] !text-white rounded-xl font-black text-sm uppercase tracking-wide flex items-center justify-center gap-2 transition cursor-pointer shadow-sm shadow-emerald-500/20 disabled:opacity-50"
+                        className="w-full min-h-[52px] md:min-h-[56px] bg-[#059669] hover:bg-emerald-700 active:scale-[0.98] !text-white rounded-xl font-black text-xs md:text-sm uppercase tracking-wide flex items-center justify-center gap-2 transition cursor-pointer shadow-sm shadow-emerald-500/20 disabled:opacity-50"
                       >
                         <Check size={20} strokeWidth={2.8} />
                         <span>Served</span>
@@ -732,7 +777,7 @@ export default function KOTKitchenDashboard() {
         </div>
 
         {/* ================= MOBILE VIEW (Single Column with Bottom Tabs) ================= */}
-        <div className="md:hidden flex-1 flex flex-col min-h-0 pb-28">
+        <div className="md:hidden flex-1 flex flex-col min-h-0 pb-36">
           {/* Active Mobile Column Content */}
           {mobileActiveTab === "new" && (
             <div className="flex-1 overflow-y-auto space-y-3">
@@ -958,7 +1003,7 @@ export default function KOTKitchenDashboard() {
       </main>
 
       {/* 3. MOBILE BOTTOM NAVIGATION (Tab Bar matching mobile design) */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-slate-200 shadow-2xl flex flex-col">
+      <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-slate-200 shadow-2xl flex flex-col pb-safe">
         {/* Helper Guide strip with clean numbered indicators */}
         <div className="bg-slate-50 border-b border-slate-100 px-4 py-2 text-[11px] font-bold text-center flex items-center justify-center">
           {mobileActiveTab === "new" && (
@@ -984,7 +1029,7 @@ export default function KOTKitchenDashboard() {
         <div className="grid grid-cols-3 p-1.5">
           <button
             onClick={() => setMobileActiveTab("new")}
-            className={`min-h-[52px] rounded-xl flex flex-col items-center justify-center relative transition ${
+            className={`min-h-[52px] rounded-xl flex flex-col items-center justify-center relative transition active:scale-95 cursor-pointer ${
               mobileActiveTab === "new" ? "bg-red-50 text-red-600 font-black" : "text-slate-500 font-bold"
             }`}
           >
@@ -999,7 +1044,7 @@ export default function KOTKitchenDashboard() {
 
           <button
             onClick={() => setMobileActiveTab("preparing")}
-            className={`min-h-[52px] rounded-xl flex flex-col items-center justify-center relative transition ${
+            className={`min-h-[52px] rounded-xl flex flex-col items-center justify-center relative transition active:scale-95 cursor-pointer ${
               mobileActiveTab === "preparing" ? "bg-amber-50 text-amber-700 font-black" : "text-slate-500 font-bold"
             }`}
           >
@@ -1014,7 +1059,7 @@ export default function KOTKitchenDashboard() {
 
           <button
             onClick={() => setMobileActiveTab("ready")}
-            className={`min-h-[52px] rounded-xl flex flex-col items-center justify-center relative transition ${
+            className={`min-h-[52px] rounded-xl flex flex-col items-center justify-center relative transition active:scale-95 cursor-pointer ${
               mobileActiveTab === "ready" ? "bg-emerald-50 text-emerald-700 font-black" : "text-slate-500 font-bold"
             }`}
           >
@@ -1064,6 +1109,7 @@ export default function KOTKitchenDashboard() {
         }}
         footer={null}
         width={380}
+        centered
       >
         <div className="space-y-4 py-2">
           <p className="text-xs text-slate-600 font-medium">
