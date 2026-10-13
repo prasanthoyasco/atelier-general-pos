@@ -21,7 +21,8 @@ import {
   IndianRupee,
   Megaphone,
   MessageCircle,
-  Sparkles
+  Sparkles,
+  CalendarCheck
 } from "lucide-react";
 import { Popover, Tooltip } from "antd";
 import { FaWhatsapp } from "react-icons/fa";
@@ -106,6 +107,7 @@ const Sidebar = ({
       icon: <IndianRupee size={20} />,
       children: [
         { key: "/billing/list", label: "Billing List", icon: <List size={18} /> },
+        { key: "/billing/daily-inventory", label: "Daily Stock Log", icon: <CalendarCheck size={18} /> },
       ],
     },
     { key: "", label: "Self Checkout", icon: <PlusCircle size={20} />, noRoute: true },

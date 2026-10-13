@@ -50,7 +50,7 @@ export default function TicketDashboard() {
         <div className="flex gap-2 flex-wrap">
           <button
             onClick={() => navigate("/ticket/raise")}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 text-white text-[13px] font-semibold hover:bg-indigo-700 transition"
+            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 !text-white text-[13px] font-semibold hover:bg-indigo-700 transition"
           >
             <Plus size={14} /> Raise Ticket
           </button>

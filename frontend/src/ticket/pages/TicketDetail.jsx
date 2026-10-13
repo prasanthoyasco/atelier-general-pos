@@ -5,6 +5,7 @@ import { ChevronLeft, User, Calendar, Wrench, CheckCircle, ThumbsUp, UserPlus, I
 import dayjs from "dayjs";
 import ticketApi from "../api/ticketApi";
 import { useAuth } from "../../context/AuthContext";
+import { sanitizeUrl } from "../../utils/sanitizeUrl.js";
 
 const { TextArea } = Input;
 const { Option } = Select;
@@ -17,7 +18,7 @@ const STATUS_COLOR = {
 const PRIORITY_COLOR = { low:"#10b981", medium:"#f59e0b", high:"#ef4444", critical:"#7c3aed" };
 
 const AttachmentThumb = ({ att, baseUrl }) => {
-  const url = `${baseUrl}${att.url}`;
+  const url = sanitizeUrl(`${baseUrl}${att.url}`);
   if (att.type?.startsWith("image/")) {
     return (
       <a href={url} target="_blank" rel="noreferrer" className="block rounded-xl overflow-hidden border border-gray-200 w-24 h-24">

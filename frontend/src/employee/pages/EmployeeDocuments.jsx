@@ -3,6 +3,7 @@ import { Modal, Form, Input, Select, Spin, message } from "antd";
 import { Plus, FileText } from "lucide-react";
 import dayjs from "dayjs";
 import empApi from "../../api/employeeApi";
+import { sanitizeUrl } from "../../utils/sanitizeUrl.js";
 
 const { Option } = Select;
 
@@ -53,7 +54,7 @@ export default function EmployeeDocuments() {
         <h2 className="text-[16px] font-bold text-gray-800">My Documents</h2>
         <button
           onClick={() => setModal(true)}
-          className="flex items-center gap-2 bg-[#4f6ee8] text-white px-4 py-2 rounded-xl text-[13px] font-medium"
+          className="flex items-center gap-2 bg-[#4f6ee8] !text-white px-4 py-2 rounded-xl text-[13px] font-medium"
         >
           <Plus size={14} /> Add Document
         </button>
@@ -81,7 +82,7 @@ export default function EmployeeDocuments() {
                 </div>
                 <p className="text-gray-400 text-[12px] mt-3">{dayjs(doc.uploaded_at).format("DD MMM YYYY")}</p>
                 <div className="flex gap-3 mt-3 pt-3 border-t border-gray-100">
-                  <a href={doc.file_url} target="_blank" rel="noreferrer" className="text-blue-600 text-[13px] hover:underline">View / Download</a>
+                  <a href={sanitizeUrl(doc.file_url)} target="_blank" rel="noreferrer" className="text-blue-600 text-[13px] hover:underline">View / Download</a>
                   <button onClick={() => handleDelete(doc.id)} className="text-red-400 text-[13px] hover:text-red-600">Remove</button>
                 </div>
               </div>
@@ -112,7 +113,7 @@ export default function EmployeeDocuments() {
           </Form.Item>
           <div className="flex justify-end gap-2">
             <button type="button" onClick={() => setModal(false)} className="px-4 py-2 rounded-lg border border-gray-200 text-gray-600 text-sm">Cancel</button>
-            <button type="submit" disabled={submitting} className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm disabled:opacity-60">
+            <button type="submit" disabled={submitting} className="px-4 py-2 rounded-lg bg-blue-600 !text-white text-sm disabled:opacity-60">
               {submitting ? "Saving..." : "Save"}
             </button>
           </div>

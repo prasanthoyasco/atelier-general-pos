@@ -21,6 +21,7 @@ import { useAuth } from "../../context/AuthContext.jsx";
 import { useBranch } from "../../context/BranchContext.jsx";
 import FoodThumbnail from "../utils/FoodThumbnail.jsx";
 import { broadcastKOTEvent, kotChannel } from "../utils/kotBroadcast.js";
+import DailyStockModal from "../components/DailyStockModal.jsx";
 import dayjs from "dayjs";
 
 const fmt = (v) =>
@@ -82,6 +83,14 @@ export default function POSPage() {
     if (saved && saved !== "all") return saved;
     return null;
   }, [selectedBranch, branches]);
+
+  const effectiveBranchName = useMemo(() => {
+    if (effectiveBranchId && branches && branches.length > 0) {
+      const match = branches.find((b) => b.branch_id === effectiveBranchId);
+      if (match) return match.branch?.branch_name || match.branch?.name || match.name;
+    }
+    return selectedBranch?.branch_name || selectedBranch?.name || "Branch";
+  }, [effectiveBranchId, branches, selectedBranch]);
 
   // Ensure POS defaults to an active branch if "all" was selected
   useEffect(() => {
@@ -193,6 +202,9 @@ export default function POSPage() {
   const [scanModalOpen, setScanModalOpen] = useState(false);
   const [manualBarcode, setManualBarcode] = useState("");
 
+  // Daily Inventory Modal
+  const [dailyStockModalOpen, setDailyStockModalOpen] = useState(false);
+
   // Fetch products
   const fetchProducts = async () => {
     setLoadingProducts(true);
@@ -213,7 +225,12 @@ export default function POSPage() {
       const bId = effectiveBranchId;
       const res = await tableService.getAll(bId ? { branch_id: bId } : {});
       if (res.data?.success) {
-        setTables(res.data.data);
+        const sorted = (res.data.data || []).sort((a, b) => {
+          const valA = String(a.table_no || a.table_name || "");
+          const valB = String(b.table_no || b.table_name || "");
+          return valA.localeCompare(valB, undefined, { numeric: true, sensitivity: "base" });
+        });
+        setTables(sorted);
       }
     } catch (err) {
       console.error("Failed to fetch tables:", err);
@@ -321,7 +338,7 @@ export default function POSPage() {
               btn: (
                 <button
                   onClick={() => handleMarkOrderServed(order.id, kotLabel)}
-                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] text-white rounded-lg text-xs font-bold shadow-xs cursor-pointer"
+                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] !text-white rounded-lg text-xs font-bold shadow-xs cursor-pointer"
                 >
                   Mark as Served
                 </button>
@@ -395,7 +412,7 @@ export default function POSPage() {
             btn: ticketId ? (
               <button
                 onClick={() => handleMarkOrderServed(ticketId, kotLabel)}
-                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] text-white rounded-lg text-xs font-bold shadow-xs cursor-pointer"
+                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] !text-white rounded-lg text-xs font-bold shadow-xs cursor-pointer"
               >
                 Mark as Served
               </button>
@@ -467,7 +484,7 @@ export default function POSPage() {
 
     // Standard styling definitions matching mockup
     const categoryStyles = {
-      all: { label: "All", icon: <LayoutGrid size={22} />, bg: "bg-blue-600 text-white", activeBorder: "ring-2 ring-blue-500" },
+      all: { label: "All", icon: <LayoutGrid size={22} />, bg: "bg-blue-600 !text-white", activeBorder: "ring-2 ring-blue-500" },
       sweets: { label: "Sweets", icon: <Cake size={22} />, bg: "bg-pink-50 text-pink-700 border-pink-100", activeBg: "bg-pink-100 ring-2 ring-pink-400" },
       sweet: { label: "Sweets", icon: <Cake size={22} />, bg: "bg-pink-50 text-pink-700 border-pink-100", activeBg: "bg-pink-100 ring-2 ring-pink-400" },
       snacks: { label: "Snacks", icon: <Utensils size={22} />, bg: "bg-orange-50 text-orange-700 border-orange-100", activeBg: "bg-orange-100 ring-2 ring-orange-400" },
@@ -716,7 +733,10 @@ export default function POSPage() {
         "Counter 1", "Counter 2", "Takeaway"
       ];
     }
-    return tables.map(t => t.table_name || t.table_no);
+    const list = tables.map((t) => t.table_name || t.table_no).filter(Boolean);
+    return list.sort((a, b) =>
+      a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" })
+    );
   }, [tables]);
 
   // Active table mapping from live kitchen orders
@@ -1139,6 +1159,17 @@ export default function POSPage() {
             )}
             <ChevronDown size={14} className="text-slate-400" />
           </button>
+
+          {/* Daily Stock Quick Button */}
+          <button
+            onClick={() => setDailyStockModalOpen(true)}
+            className="px-3 py-1.5 rounded-xl border border-indigo-200 bg-indigo-50/80 hover:bg-indigo-100 text-indigo-800 font-bold text-xs md:text-sm flex items-center gap-1.5 transition cursor-pointer shadow-sm"
+            title="Daily Stock: Morning purchase arrivals & evening closing count"
+          >
+            <ClipboardList size={16} className="text-indigo-600" />
+            <span className="hidden sm:inline">Daily Stock</span>
+          </button>
+
 
           <div className="hidden sm:flex items-center gap-1.5 text-xs font-semibold text-emerald-600 bg-emerald-50/80 px-2.5 py-1 rounded-full border border-emerald-100">
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
@@ -2710,7 +2741,7 @@ export default function POSPage() {
 
               <button
                 onClick={handleAddCustomizedToCart}
-                className="flex-1 py-2.5 px-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs shadow-md shadow-indigo-500/20 transition cursor-pointer flex items-center justify-center gap-1.5"
+                className="flex-1 py-2.5 px-3 bg-indigo-600 hover:bg-indigo-700 !text-white font-bold rounded-xl text-xs shadow-md shadow-indigo-500/20 transition cursor-pointer flex items-center justify-center gap-1.5"
               >
                 <span>Add with Add-ons</span>
                 <span className="font-extrabold text-indigo-100">
@@ -2721,6 +2752,15 @@ export default function POSPage() {
           </div>
         )}
       </Modal>
+
+      {/* Daily Stock Fast Modal for Cashiers */}
+      <DailyStockModal
+        open={dailyStockModalOpen}
+        onCancel={() => setDailyStockModalOpen(false)}
+        onUpdated={fetchProducts}
+        branchId={effectiveBranchId}
+        branchName={effectiveBranchName}
+      />
     </div>
   );
 }

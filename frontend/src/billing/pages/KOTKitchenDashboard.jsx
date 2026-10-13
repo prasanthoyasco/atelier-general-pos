@@ -859,7 +859,7 @@ export default function KOTKitchenDashboard() {
                         <button
                           onClick={() => handleTransition(order.id, "preparing")}
                           disabled={actionLoadingId === order.id}
-                          className="flex-1 min-h-[56px] bg-[#EF4444] text-white rounded-xl font-black text-xs uppercase flex items-center justify-center gap-1.5"
+                          className="flex-1 min-h-[56px] bg-[#EF4444] !text-white rounded-xl font-black text-xs uppercase flex items-center justify-center gap-1.5"
                         >
                           <Play size={16} fill="currentColor" /> Start Cooking
                         </button>
@@ -989,7 +989,7 @@ export default function KOTKitchenDashboard() {
                       <button
                         onClick={() => handleTransition(order.id, "served")}
                         disabled={actionLoadingId === order.id}
-                        className="w-full min-h-[56px] bg-[#059669] text-white rounded-xl font-black text-xs uppercase flex items-center justify-center gap-1.5"
+                        className="w-full min-h-[56px] bg-[#059669] !text-white rounded-xl font-black text-xs uppercase flex items-center justify-center gap-1.5"
                       >
                         <Check size={18} strokeWidth={2.8} /> Served
                       </button>

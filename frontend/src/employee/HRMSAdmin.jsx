@@ -17,6 +17,8 @@ const getSelfieUrl = (selfie_url) =>
   selfie_url ? `${BACKEND_BASE}${selfie_url}` : null;
 import api from "../api/api";
 import PayslipTemplate from "./components/PayslipTemplate";
+import { escapeHtml, sanitizeHtml } from "../utils/sanitizeHtml.js";
+import { sanitizeUrl } from "../utils/sanitizeUrl.js";
 
 const { Option } = Select;
 const { TabPane } = Tabs;
@@ -536,10 +538,13 @@ export default function HRMSAdmin() {
   const handlePrintPayslip = () => {
     const content = document.getElementById("admin-payslip-print");
     if (!content) return;
+    const safeTitle = escapeHtml(viewPayslip?.employee?.name || "Employee");
+    const safeBody = sanitizeHtml(content.outerHTML);
     const win = window.open("", "_blank");
-    win.document.write(`<html><head><title>Payslip - ${viewPayslip?.employee?.name}</title>
+    if (!win) return;
+    win.document.write(`<html><head><title>Payslip - ${safeTitle}</title>
       <style>*{box-sizing:border-box;margin:0;padding:0;}body{font-family:'Segoe UI',sans-serif;background:#f1f5f9;padding:24px;}@media print{body{background:#fff;padding:0;}}</style>
-      </head><body>${content.outerHTML}</body></html>`);
+      </head><body>${safeBody}</body></html>`);
     win.document.close(); win.focus();
     setTimeout(() => { win.print(); win.close(); }, 500);
   };
@@ -1844,7 +1849,7 @@ export default function HRMSAdmin() {
                       <p className="font-medium text-sm">{doc.document_name}</p>
                       <p className="text-xs text-gray-400">{doc.file_name} · <Tag className="text-[10px]">{doc.document_type?.replace("_", " ")}</Tag></p>
                     </div>
-                    <a href={doc.file_url} target="_blank" rel="noreferrer" className="text-blue-600 text-sm">View</a>
+                    <a href={sanitizeUrl(doc.file_url)} target="_blank" rel="noreferrer" className="text-blue-600 text-sm">View</a>
                   </div>
                 ))
               }

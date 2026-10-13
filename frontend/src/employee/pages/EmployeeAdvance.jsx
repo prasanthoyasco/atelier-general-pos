@@ -60,7 +60,7 @@ export default function EmployeeAdvance() {
         <h2 className="text-[16px] font-bold text-gray-800">Advance Payment</h2>
         <button
           onClick={() => setModal(true)}
-          className="flex items-center gap-2 bg-[#4f6ee8] text-white px-4 py-2 rounded-xl text-[13px] font-medium"
+          className="flex items-center gap-2 bg-[#4f6ee8] !text-white px-4 py-2 rounded-xl text-[13px] font-medium"
         >
           <Plus size={14} /> Request Advance
         </button>
@@ -139,7 +139,7 @@ export default function EmployeeAdvance() {
           </Form.Item>
           <div className="flex justify-end gap-2">
             <button type="button" onClick={() => setModal(false)} className="px-4 py-2 rounded-lg border border-gray-200 text-gray-600 text-sm">Cancel</button>
-            <button type="submit" disabled={submitting} className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm disabled:opacity-60">
+            <button type="submit" disabled={submitting} className="px-4 py-2 rounded-lg bg-blue-600 !text-white text-sm disabled:opacity-60">
               {submitting ? 'Submitting...' : 'Submit Request'}
             </button>
           </div>

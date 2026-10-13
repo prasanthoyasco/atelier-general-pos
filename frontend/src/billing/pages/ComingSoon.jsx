@@ -9,7 +9,7 @@ const ComingSoon = () => {
                     <h1 className="text-5xl md:text-7xl font-black text-[#0A5D67] mt-2 mb-8 tracking-tight">
                         Comming Soon
                     </h1>
-                    <button className="bg-[#5AC8B0] hover:bg-[#4ab39d] text-white font-bold py-3 px-10 rounded-full transition duration-300 uppercase text-sm tracking-widest shadow-lg">
+                    <button className="bg-[#5AC8B0] hover:bg-[#4ab39d] !text-white font-bold py-3 px-10 rounded-full transition duration-300 uppercase text-sm tracking-widest shadow-lg">
                         Learn More
                     </button>
                 </div>

@@ -8,6 +8,7 @@ import {
 import dayjs from "dayjs";
 import empApi from "../api/employeeApi";
 import { useEmployeeAuth } from "../context/EmployeeAuthContext";
+import { sanitizeUrl } from "../utils/sanitizeUrl.js";
 
 const { Option } = Select;
 const { TextArea } = Input;
@@ -201,7 +202,7 @@ export default function EmployeeDashboard() {
           <button
             onClick={handleSignIn}
             disabled={actionLoading || !!todayRecord?.sign_in}
-            className="flex items-center gap-2 bg-[#6bc58b] text-white px-4 py-2 rounded-xl text-[13px] font-medium disabled:opacity-50"
+            className="flex items-center gap-2 bg-[#6bc58b] !text-white px-4 py-2 rounded-xl text-[13px] font-medium disabled:opacity-50"
           >
             <LogIn size={14} />
             {todayRecord?.sign_in ? `In: ${todayRecord.sign_in}` : "Sign In"}
@@ -210,7 +211,7 @@ export default function EmployeeDashboard() {
           <button
             onClick={handleSignOut}
             disabled={actionLoading || !todayRecord?.sign_in || !!todayRecord?.sign_out}
-            className="flex items-center gap-2 bg-[#f0a76d] text-white px-4 py-2 rounded-xl text-[13px] font-medium disabled:opacity-50"
+            className="flex items-center gap-2 bg-[#f0a76d] !text-white px-4 py-2 rounded-xl text-[13px] font-medium disabled:opacity-50"
           >
             <LogOut size={14} />
             {todayRecord?.sign_out ? `Out: ${todayRecord.sign_out}` : "Sign Out"}
@@ -218,7 +219,7 @@ export default function EmployeeDashboard() {
 
           <button
             onClick={() => setLeaveModal(true)}
-            className="flex items-center gap-2 bg-[#4f6ee8] text-white px-4 py-2 rounded-xl text-[13px] font-medium"
+            className="flex items-center gap-2 bg-[#4f6ee8] !text-white px-4 py-2 rounded-xl text-[13px] font-medium"
           >
             <Plus size={14} />
             Apply Leave
@@ -372,7 +373,7 @@ export default function EmployeeDashboard() {
           <div className="flex justify-end mb-4">
             <button
               onClick={() => setDocModal(true)}
-              className="flex items-center gap-2 bg-[#4f6ee8] text-white px-5 py-2 rounded-xl text-[13px] font-medium"
+              className="flex items-center gap-2 bg-[#4f6ee8] !text-white px-5 py-2 rounded-xl text-[13px] font-medium"
             >
               <Plus size={14} />
               Add Document
@@ -390,7 +391,7 @@ export default function EmployeeDashboard() {
                 </span>
                 <p className="text-gray-400 text-[13px] mt-3">{dayjs(doc.uploaded_at).format("DD MMM YYYY")}</p>
                 <div className="flex gap-3 mt-3">
-                  <a href={doc.file_url} target="_blank" rel="noreferrer" className="text-blue-600 text-[13px]">View / Download</a>
+                  <a href={sanitizeUrl(doc.file_url)} target="_blank" rel="noreferrer" className="text-blue-600 text-[13px]">View / Download</a>
                   <button onClick={() => handleDeleteDoc(doc.id)} className="text-red-400 text-[13px]">Remove</button>
                 </div>
               </div>
@@ -426,7 +427,7 @@ export default function EmployeeDashboard() {
           </Form.Item>
           <div className="flex justify-end gap-2">
             <button type="button" onClick={() => setLeaveModal(false)} className="px-4 py-2 rounded-lg border border-gray-200 text-gray-600 text-sm">Cancel</button>
-            <button type="submit" disabled={actionLoading} className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm disabled:opacity-60">
+            <button type="submit" disabled={actionLoading} className="px-4 py-2 rounded-lg bg-blue-600 !text-white text-sm disabled:opacity-60">
               {actionLoading ? "Submitting..." : "Apply"}
             </button>
           </div>
@@ -462,7 +463,7 @@ export default function EmployeeDashboard() {
           </Form.Item>
           <div className="flex justify-end gap-2">
             <button type="button" onClick={() => setDocModal(false)} className="px-4 py-2 rounded-lg border border-gray-200 text-gray-600 text-sm">Cancel</button>
-            <button type="submit" disabled={actionLoading} className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm disabled:opacity-60">
+            <button type="submit" disabled={actionLoading} className="px-4 py-2 rounded-lg bg-blue-600 !text-white text-sm disabled:opacity-60">
               {actionLoading ? "Saving..." : "Save"}
             </button>
           </div>

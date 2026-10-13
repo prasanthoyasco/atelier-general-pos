@@ -92,6 +92,7 @@ const MainLayout = ({ menuItems }) => {
       label: "Billing",
       children: [
         { key: "/billing/list", label: "Billing List" },
+        { key: "/billing/daily-inventory", label: "Daily Stock & Inventory" },
       ],
     },
     {

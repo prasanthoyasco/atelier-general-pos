@@ -1,11 +1,11 @@
 export const RECEIPT_SETTINGS_KEY = "duchReceiptSettings";
 
 export const defaultReceiptSettings = {
-  storeName: "ANNAPOORANI",
-  instagram: "annapoorani_sweets",
-  cell1: "7010668139",
-  cell2: "89764718464",
-  gstin: "33AYDPV1722F1ZO",
+  storeName: "Pozhudhu",
+  instagram: "@pozhudhu_cafe",
+  cell1: "9629103751",
+  cell2: "9042551109",
+  gstin: "33AYDPV172S01ZO",
   billTitle: "CUSTOMER COPY",
   footerTitle: "Terms & Conditions:",
   footerTerms: [
@@ -18,17 +18,45 @@ export const defaultReceiptSettings = {
 
 export const getReceiptSettings = () => {
   try {
-    const saved = JSON.parse(localStorage.getItem(RECEIPT_SETTINGS_KEY) || "{}");
+    const raw = localStorage.getItem(RECEIPT_SETTINGS_KEY);
+    const saved = raw ? JSON.parse(raw) : {};
+
+    // Auto-migrate old default store name "ANNAPOORANI" or empty to "Pozhudhu"
+    if (!saved.storeName || saved.storeName === "ANNAPOORANI" || !saved.storeName.trim()) {
+      saved.storeName = "Pozhudhu";
+    }
+    if (saved.instagram === "annapoorani_sweets") {
+      saved.instagram = "@pozhudhu_cafe";
+    }
+
     return { ...defaultReceiptSettings, ...saved };
-  } catch {
-    return defaultReceiptSettings;
+  } catch (err) {
+    console.error("Failed to parse receipt settings:", err);
+    return { ...defaultReceiptSettings };
   }
 };
 
-export const saveReceiptSettings = (settings) => {
-  const next = { ...defaultReceiptSettings, ...settings };
-  localStorage.setItem(RECEIPT_SETTINGS_KEY, JSON.stringify(next));
-  return next;
+export const saveReceiptSettings = (settings = {}) => {
+  try {
+    const current = getReceiptSettings();
+    const next = {
+      ...defaultReceiptSettings,
+      ...current,
+      ...settings,
+      storeName: settings.storeName?.trim() || "Pozhudhu",
+    };
+    localStorage.setItem(RECEIPT_SETTINGS_KEY, JSON.stringify(next));
+
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event("storage"));
+      window.dispatchEvent(new CustomEvent("receiptSettingsUpdated", { detail: next }));
+    }
+
+    return next;
+  } catch (err) {
+    console.error("Failed to save receipt settings:", err);
+    return defaultReceiptSettings;
+  }
 };
 
 export const getBranchDetails = (branches = [], selectedBranch) => {
@@ -49,7 +77,7 @@ export const getBranchAddressLines = (branch) => {
   if (cityLine) lines.push(cityLine);
   if (branch.phone) lines.push(`CELL: ${branch.phone}`);
 
-  return lines.length > 0 ? lines : [branch.branch_name || "ANNAPOORANI"];
+  return lines.length > 0 ? lines : [branch.branch_name || "Pozhudhu"];
 };
 
 export const getReceiptProfile = ({ branches = [], selectedBranch, settings, branch: branchOverride } = {}) => {

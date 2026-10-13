@@ -475,14 +475,14 @@ const DashboardFull = () => {
             <div className="flex items-center gap-2.5 shrink-0">
               <button
                 onClick={() => navigate("/billing/pos")}
-                className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs sm:text-sm flex items-center gap-2 shadow-sm transition active:scale-95 cursor-pointer"
+                className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 !text-white font-bold text-xs sm:text-sm flex items-center gap-2 shadow-sm transition active:scale-95 cursor-pointer"
               >
                 <ShoppingCart size={15} />
                 <span>Start POS Billing</span>
               </button>
               <button
                 onClick={() => navigate("/billing/billing")}
-                className="px-3.5 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs sm:text-sm border border-white/20 transition active:scale-95 cursor-pointer"
+                className="px-3.5 py-2 rounded-xl bg-white/10 hover:bg-white/20 !text-white font-bold text-xs sm:text-sm border border-white/20 transition active:scale-95 cursor-pointer"
               >
                 Create Bill
               </button>
@@ -1063,7 +1063,7 @@ const DashboardFull = () => {
                   </p>
                   <button
                     onClick={() => navigate('/billing/pos')}
-                    className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition active:scale-95 cursor-pointer"
+                    className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 !text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition active:scale-95 cursor-pointer"
                   >
                     <Plus size={14} /> Start POS Billing
                   </button>

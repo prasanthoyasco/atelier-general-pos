@@ -1,4 +1,6 @@
+import { useState } from "react";
 import dayjs from "dayjs";
+import { getReceiptSettings } from "../../billing/service/receiptSettings.js";
 
 const MONTHS = ["January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December"];
@@ -37,6 +39,7 @@ const IconBox = ({ color, bg, border, children }) => (
 );
 
 export default function PayslipTemplate({ data, printId = "payslip-print" }) {
+  const [logoError, setLogoError] = useState(false);
   const emp = data.employee || {};
   const month = MONTHS[(data.month || 1) - 1];
   const net = num(data.net_salary);
@@ -85,18 +88,22 @@ export default function PayslipTemplate({ data, printId = "payslip-print" }) {
                   boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
                   padding: 4,
                 }}>
+                {logoError ? (
+                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="3" y="3" width="18" height="18" rx="2"/>
+                    <path d="M9 3v18M15 3v18M3 9h18M3 15h18"/>
+                  </svg>
+                ) : (
                   <img
                     src="/duch_small_logo.png"
                     alt="DUCH CLOTHING"
                     style={{ width: '100%', height: '100%', objectFit: 'contain' }}
-                    onError={(e) => {
-                      e.target.style.display = 'none';
-                      e.target.parentElement.innerHTML = '<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18M15 3v18M3 9h18M3 15h18"/></svg>';
-                    }}
+                    onError={() => setLogoError(true)}
                   />
+                )}
                 </div>
                 <div>
-                  <div style={{ fontSize: 18, fontWeight: 900, color: '#fff', letterSpacing: '0.5px' }}>ANNAPOORANI</div>
+                  <div style={{ fontSize: 18, fontWeight: 900, color: '#fff', letterSpacing: '0.5px' }}>{getReceiptSettings()?.storeName || "Pozhudhu"}</div>
                   <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.75)', marginTop: 3, lineHeight: 1.4 }}>
                     Saibaba Colony Branch, Raja Annamalai Road<br />
                     Saibaba Colony, Coimbatore, Tamil Nadu – 641011
@@ -339,7 +346,7 @@ export default function PayslipTemplate({ data, printId = "payslip-print" }) {
         {/* ══ FOOTER ══════════════════════════════════════════════════════════ */}
         <div style={{ paddingTop: 16, borderTop: '1px dashed #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div style={{ fontSize: 10, color: '#cbd5e1' }}>This is a system-generated payslip and does not require a signature.</div>
-          <div style={{ fontSize: 10, color: '#cbd5e1' }}>ANNAPOORANI · Confidential</div>
+          <div style={{ fontSize: 10, color: '#cbd5e1' }}>{getReceiptSettings()?.storeName || "Pozhudhu"} · Confidential</div>
         </div>
       </div>
     </div>

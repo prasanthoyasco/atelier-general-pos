@@ -143,7 +143,7 @@ function SignInModal({ open, onConfirm, onCancel, loading }) {
         <div className="flex gap-3">
           {step === "camera" ? (
             <button onClick={takeSelfie} disabled={!!camError || loading}
-              className="flex-1 flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-xl text-[13px] font-semibold disabled:opacity-40 transition">
+              className="flex-1 flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 !text-white py-2.5 rounded-xl text-[13px] font-semibold disabled:opacity-40 transition">
               <Camera size={15} /> Take Selfie
             </button>
           ) : (
@@ -153,7 +153,7 @@ function SignInModal({ open, onConfirm, onCancel, loading }) {
             </button>
           )}
           <button onClick={handleConfirm} disabled={loading || !selfieData || !location}
-            className="flex-1 flex items-center justify-center gap-2 bg-green-500 hover:bg-green-600 text-white py-2.5 rounded-xl text-[13px] font-semibold disabled:opacity-60 transition relative overflow-hidden">
+            className="flex-1 flex items-center justify-center gap-2 bg-green-500 hover:bg-green-600 !text-white py-2.5 rounded-xl text-[13px] font-semibold disabled:opacity-60 transition relative overflow-hidden">
             {loading ? (
               <>
                 <svg className="animate-spin w-4 h-4 text-white" fill="none" viewBox="0 0 24 24">
@@ -246,17 +246,17 @@ export default function EmployeeOverview() {
         </div>
         <div className="flex flex-wrap gap-2">
           <button onClick={() => setSignInModal(true)} disabled={actionLoading || !!todayRecord?.sign_in}
-            className="flex items-center gap-2 bg-[#6bc58b] text-white px-4 py-2 rounded-xl text-[13px] font-medium disabled:opacity-50">
+            className="flex items-center gap-2 bg-[#6bc58b] !text-white px-4 py-2 rounded-xl text-[13px] font-medium disabled:opacity-50">
             <LogIn size={14} />
             {todayRecord?.sign_in ? `In: ${todayRecord.sign_in}` : "Sign In"}
           </button>
           <button onClick={handleSignOut} disabled={actionLoading || !todayRecord?.sign_in || !!todayRecord?.sign_out}
-            className="flex items-center gap-2 bg-[#f0a76d] text-white px-4 py-2 rounded-xl text-[13px] font-medium disabled:opacity-50">
+            className="flex items-center gap-2 bg-[#f0a76d] !text-white px-4 py-2 rounded-xl text-[13px] font-medium disabled:opacity-50">
             <LogOut size={14} />
             {todayRecord?.sign_out ? `Out: ${todayRecord.sign_out}` : "Sign Out"}
           </button>
           <button onClick={() => navigate("/employee-dashboard/leaves")}
-            className="flex items-center gap-2 bg-[#4f6ee8] text-white px-4 py-2 rounded-xl text-[13px] font-medium">
+            className="flex items-center gap-2 bg-[#4f6ee8] !text-white px-4 py-2 rounded-xl text-[13px] font-medium">
             <Plus size={14} /> Apply Leave
           </button>
         </div>

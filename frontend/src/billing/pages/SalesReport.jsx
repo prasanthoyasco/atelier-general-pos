@@ -34,6 +34,7 @@ import { useBranch } from "../../context/BranchContext";
 import * as XLSX from "xlsx";
 import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
+import { escapeHtml, sanitizeHtml } from "../../utils/sanitizeHtml.js";
 
 const { Title, Text } = Typography;
 const { RangePicker } = DatePicker;
@@ -361,14 +362,14 @@ function SalesReport() {
       pdfContent.style.backgroundColor = "#ffffff";
       pdfContent.style.fontFamily = "Arial, sans-serif";
 
-      pdfContent.innerHTML = `
+      const rawHtml = `
         <div style="text-align: center; margin-bottom: 30px; border-bottom: 3px solid #1890ff; padding-bottom: 20px;">
           <h1 style="color: #1890ff; margin: 0; font-size: 28px; font-weight: bold;">SALES REPORT</h1>
           <p style="color: #666; margin: 10px 0 0 0; font-size: 14px;">
-            ${getPeriodLabel()} | ${selectedBranch?.name || "All Branches"}
+            ${escapeHtml(getPeriodLabel())} | ${escapeHtml(selectedBranch?.name || "All Branches")}
           </p>
           <p style="color: #999; margin: 5px 0 0 0; font-size: 12px;">
-            Generated on ${dayjs().format("DD MMM YYYY, hh:mm A")}
+            Generated on ${escapeHtml(dayjs().format("DD MMM YYYY, hh:mm A"))}
           </p>
         </div>
 
@@ -416,7 +417,7 @@ function SalesReport() {
                 .map(
                   (pm, index) => `
                 <tr style="background: ${index % 2 === 0 ? "#fafafa" : "white"};">
-                  <td style="padding: 10px; border: 1px solid #d9d9d9; font-weight: bold;">${pm.method.toUpperCase()}</td>
+                  <td style="padding: 10px; border: 1px solid #d9d9d9; font-weight: bold;">${escapeHtml(pm.method.toUpperCase())}</td>
                   <td style="padding: 10px; border: 1px solid #d9d9d9; text-align: center;">${pm.count}</td>
                   <td style="padding: 10px; border: 1px solid #d9d9d9; text-align: right;">
                     ₹${parseFloat(pm.total_amount).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
@@ -443,6 +444,8 @@ function SalesReport() {
           <p style="margin: 5px 0 0 0;">© ${dayjs().year()} - All Rights Reserved</p>
         </div>
       `;
+
+      pdfContent.innerHTML = sanitizeHtml(rawHtml);
 
       document.body.appendChild(pdfContent);
 
@@ -515,7 +518,7 @@ function SalesReport() {
               <Dropdown overlay={exportMenu} placement="bottomRight" disabled={exporting}>
                 <button
                   disabled={exporting}
-                  className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 active:scale-95 text-white px-4 py-2 rounded-xl font-medium transition-all shadow-sm shadow-emerald-500/20 disabled:opacity-70 cursor-pointer"
+                  className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 active:scale-95 !text-white px-4 py-2 rounded-xl font-medium transition-all shadow-sm shadow-emerald-500/20 disabled:opacity-70 cursor-pointer"
                 >
                   <Download size={18} />
                   <span>{exporting ? "Exporting..." : "Export"}</span>

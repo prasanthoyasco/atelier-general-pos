@@ -28,6 +28,7 @@ import {
   EyeOutlined,
   PlusOutlined,
 } from "@ant-design/icons";
+import { safeOpen } from "../../utils/sanitizeUrl.js";
 import { useNavigate, useParams } from "react-router-dom";
 import productService from "../services/productService";
 import categoryService from "../services/categoryService";
@@ -139,7 +140,7 @@ const ProductImageUploader = ({ value, onChange }) => {
               type="primary"
               size="small"
               icon={<EyeOutlined />}
-              onClick={(e) => { e.stopPropagation(); window.open(value, "_blank"); }}
+              onClick={(e) => { e.stopPropagation(); safeOpen(value, "_blank"); }}
               style={{ borderRadius: 6 }}
             >
               View

@@ -345,7 +345,7 @@ export default function AddonList() {
               onClick={() => setStatusFilter("active")}
               className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
                 statusFilter === "active"
-                  ? "bg-emerald-600 text-white shadow-xs"
+                  ? "bg-emerald-600 !text-white shadow-xs"
                   : "text-slate-500 hover:text-slate-800"
               }`}
             >
@@ -355,7 +355,7 @@ export default function AddonList() {
               onClick={() => setStatusFilter("inactive")}
               className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
                 statusFilter === "inactive"
-                  ? "bg-slate-700 text-white shadow-xs"
+                  ? "bg-slate-700 !text-white shadow-xs"
                   : "text-slate-500 hover:text-slate-800"
               }`}
             >
@@ -452,7 +452,7 @@ export default function AddonList() {
       <button
         onClick={handleOpenCreate}
         aria-label="Add New Add-on"
-        className="fixed bottom-24 right-5 md:hidden z-30 w-14 h-14 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white rounded-full shadow-2xl flex items-center justify-center cursor-pointer transition shadow-indigo-600/30"
+        className="fixed bottom-24 right-5 md:hidden z-30 w-14 h-14 bg-indigo-600 hover:bg-indigo-700 active:scale-95 !text-white rounded-full shadow-2xl flex items-center justify-center cursor-pointer transition shadow-indigo-600/30"
       >
         <Plus size={24} />
       </button>

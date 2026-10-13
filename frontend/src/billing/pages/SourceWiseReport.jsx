@@ -36,6 +36,7 @@ import { useBranch } from "../../context/BranchContext";
 import * as XLSX from "xlsx";
 import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
+import { escapeHtml, sanitizeHtml } from "../../utils/sanitizeHtml.js";
 
 const { Title, Text } = Typography;
 const { RangePicker } = DatePicker;
@@ -426,14 +427,14 @@ function SourceWiseReport() {
       pdfContent.style.fontFamily = "Arial, sans-serif";
 
       // Header
-      pdfContent.innerHTML = `
+      const rawHtml = `
         <div style="text-align: center; margin-bottom: 30px; border-bottom: 3px solid #1890ff; padding-bottom: 20px;">
           <h1 style="color: #1890ff; margin: 0; font-size: 28px; font-weight: bold;">SOURCE-WISE BILLING REPORT</h1>
           <p style="color: #666; margin: 10px 0 0 0; font-size: 14px;">
-            ${getPeriodLabel()} | ${selectedBranch?.name || "All Branches"}
+            ${escapeHtml(getPeriodLabel())} | ${escapeHtml(selectedBranch?.name || "All Branches")}
           </p>
           <p style="color: #999; margin: 5px 0 0 0; font-size: 12px;">
-            Generated on ${dayjs().format("DD MMM YYYY, hh:mm A")}
+            Generated on ${escapeHtml(dayjs().format("DD MMM YYYY, hh:mm A"))}
           </p>
         </div>
 
@@ -487,7 +488,7 @@ function SourceWiseReport() {
                 .map(
                   (source, index) => `
                 <tr style="background: ${index % 2 === 0 ? "#fafafa" : "white"};">
-                  <td style="padding: 10px; border: 1px solid #d9d9d9; font-weight: bold;">${source.source}</td>
+                  <td style="padding: 10px; border: 1px solid #d9d9d9; font-weight: bold;">${escapeHtml(source.source)}</td>
                   <td style="padding: 10px; border: 1px solid #d9d9d9; text-align: center;">${source.bills_count}</td>
                   <td style="padding: 10px; border: 1px solid #d9d9d9; text-align: center;">${source.unique_customers}</td>
                   <td style="padding: 10px; border: 1px solid #d9d9d9; text-align: right;">
@@ -534,9 +535,9 @@ function SourceWiseReport() {
                   <td style="padding: 10px; border: 1px solid #d9d9d9; text-align: center; font-weight: bold;">
                     ${index + 1}
                   </td>
-                  <td style="padding: 10px; border: 1px solid #d9d9d9;">${customer.customer_name}</td>
-                  <td style="padding: 10px; border: 1px solid #d9d9d9;">${customer.customer_phone}</td>
-                  <td style="padding: 10px; border: 1px solid #d9d9d9;">${customer.source}</td>
+                  <td style="padding: 10px; border: 1px solid #d9d9d9;">${escapeHtml(customer.customer_name)}</td>
+                  <td style="padding: 10px; border: 1px solid #d9d9d9;">${escapeHtml(customer.customer_phone)}</td>
+                  <td style="padding: 10px; border: 1px solid #d9d9d9;">${escapeHtml(customer.source)}</td>
                   <td style="padding: 10px; border: 1px solid #d9d9d9; text-align: center;">${customer.bills_count}</td>
                   <td style="padding: 10px; border: 1px solid #d9d9d9; text-align: right; font-weight: bold; color: #52c41a;">
                     ₹${parseFloat(customer.total_spent).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
@@ -558,6 +559,8 @@ function SourceWiseReport() {
           <p style="margin: 5px 0 0 0;">© ${dayjs().year()} - All Rights Reserved</p>
         </div>
       `;
+
+      pdfContent.innerHTML = sanitizeHtml(rawHtml);
 
       document.body.appendChild(pdfContent);
 

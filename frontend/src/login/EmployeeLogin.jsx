@@ -96,8 +96,8 @@ const EmployeeLogin = () => {
 
       <div className="max-w-md w-full bg-white/80 backdrop-blur-xl rounded-3xl shadow-2xl p-10 border border-white/40 relative z-10">
         <div className="text-center mb-6">
-          <div className="w-16 h-16 bg-black rounded-xl flex items-center justify-center mx-auto mb-2 shadow-lg">
-            <img src="/duch_small_logo.png" alt="DUCH CLOTHING" className="w-12 h-12 object-contain" />
+          <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center mx-auto mb-2 shadow-sm border border-gray-100 p-2">
+            <img src="/colapslogo.png" alt="Logo" className="w-full h-full object-contain" />
           </div>
           <h1 className="text-2xl font-bold text-gray-800">Employee Login</h1>
           <p className="text-gray-500 text-sm mt-1">HRMS Employee Portal</p>

@@ -8,6 +8,7 @@ import { QRCodeCanvas } from "qrcode.react";
 import { jsPDF } from "jspdf";
 import Barcode from "react-barcode";
 import JsBarcode from "jsbarcode";
+import { getReceiptSettings } from "../../billing/service/receiptSettings.js";
 
 const { Search } = Input;
 
@@ -216,11 +217,12 @@ const ProductList = () => {
       pdf.setDrawColor(180);
       pdf.roundedRect(x, y, labelW, labelH, 2, 2);
 
-      // Header: ANNAPOORANI
+      // Header: Store Name
+      const labelStoreName = getReceiptSettings()?.storeName || "Pozhudhu";
       pdf.setFontSize(9);
       pdf.setFont("helvetica", "bold");
       pdf.setTextColor(30, 30, 30);
-      pdf.text("ANNAPOORANI", x + labelW / 2, y + 5, { align: "center" });
+      pdf.text(labelStoreName, x + labelW / 2, y + 5, { align: "center" });
 
       // Divider line
       pdf.setDrawColor(200);
@@ -490,7 +492,7 @@ const ProductList = () => {
       <button
         onClick={() => navigate("/Product/add")}
         aria-label="Add Product"
-        className="fixed bottom-24 right-5 md:hidden z-30 w-14 h-14 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white rounded-full shadow-2xl flex items-center justify-center cursor-pointer transition shadow-indigo-600/30"
+        className="fixed bottom-24 right-5 md:hidden z-30 w-14 h-14 bg-indigo-600 hover:bg-indigo-700 active:scale-95 !text-white rounded-full shadow-2xl flex items-center justify-center cursor-pointer transition shadow-indigo-600/30"
       >
         <PlusOutlined style={{ fontSize: 22 }} />
       </button>

@@ -1041,7 +1041,7 @@ function BillingList() {
       <button
         onClick={() => navigate("/billing/pos")}
         aria-label="New Bill"
-        className="fixed bottom-24 right-5 md:hidden z-30 w-14 h-14 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white rounded-full shadow-2xl flex items-center justify-center cursor-pointer transition shadow-indigo-600/30"
+        className="fixed bottom-24 right-5 md:hidden z-30 w-14 h-14 bg-indigo-600 hover:bg-indigo-700 active:scale-95 !text-white rounded-full shadow-2xl flex items-center justify-center cursor-pointer transition shadow-indigo-600/30"
       >
         <PlusOutlined style={{ fontSize: 22 }} />
       </button>

@@ -5,6 +5,7 @@ import { Ticket, LogOut, RefreshCw, Wrench, Video, Mic, FileText } from "lucide-
 import dayjs from "dayjs";
 import axios from "axios";
 import { BASE_API } from "../../api/api.js";
+import { sanitizeUrl } from "../../utils/sanitizeUrl.js";
 
 const { Option } = Select;
 
@@ -21,7 +22,7 @@ const BACKEND = BASE_API.replace("/api/v1", "");
 
 // ── Attachment thumbnail ──────────────────────────────────────────────────────
 const AttachThumb = ({ att }) => {
-  const url = `${BACKEND}${att.url}`;
+  const url = sanitizeUrl(`${BACKEND}${att.url}`);
   if (att.type?.startsWith("image/")) return (
     <a href={url} target="_blank" rel="noreferrer"
       className="rounded-xl overflow-hidden border border-gray-200 hover:opacity-90 transition"

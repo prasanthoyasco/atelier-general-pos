@@ -112,7 +112,7 @@ export default function KOTWaiterNotifier() {
                     console.error("Failed to mark order served:", err);
                   }
                 }}
-                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] text-white rounded-lg text-xs font-bold shadow-xs cursor-pointer"
+                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] !text-white rounded-lg text-xs font-bold shadow-xs cursor-pointer"
               >
                 Mark as Served
               </button>

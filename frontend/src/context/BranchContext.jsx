@@ -34,9 +34,11 @@ export const BranchProvider = ({ children }) => {
       // Auto-select if only one branch
       if (userBranches.length === 1) {
         const branch = userBranches[0];
+        const bName = branch.branch?.branch_name || branch.branch?.name;
         setSelectedBranch({
           id: branch.branch_id,
-          name: branch.branch?.branch_name || branch.branch?.name,
+          name: bName,
+          branch_name: bName,
           code: branch.branch?.branch_code || branch.branch?.code,
         });
         setUserRole(branch.role?.role_name || branch.role?.name);
@@ -51,15 +53,18 @@ export const BranchProvider = ({ children }) => {
             setSelectedBranch({
               id: 'all',
               name: 'All Branches',
+              branch_name: 'All Branches',
               code: 'ALL',
             });
             setUserRole(null);
           } else {
             const savedBranch = userBranches.find(b => b.branch_id === savedBranchId);
             if (savedBranch) {
+              const bName = savedBranch.branch?.branch_name || savedBranch.branch?.name;
               setSelectedBranch({
                 id: savedBranch.branch_id,
-                name: savedBranch.branch?.branch_name || savedBranch.branch?.name,
+                name: bName,
+                branch_name: bName,
                 code: savedBranch.branch?.branch_code || savedBranch.branch?.code,
               });
               setUserRole(savedBranch.role?.role_name || savedBranch.role?.name);
@@ -68,6 +73,7 @@ export const BranchProvider = ({ children }) => {
               setSelectedBranch({
                 id: 'all',
                 name: 'All Branches',
+                branch_name: 'All Branches',
                 code: 'ALL',
               });
               setUserRole(null);
@@ -78,6 +84,7 @@ export const BranchProvider = ({ children }) => {
           setSelectedBranch({
             id: 'all',
             name: 'All Branches',
+            branch_name: 'All Branches',
             code: 'ALL',
           });
           setUserRole(null);
@@ -101,6 +108,7 @@ export const BranchProvider = ({ children }) => {
       setSelectedBranch({
         id: 'all',
         name: 'All Branches',
+        branch_name: 'All Branches',
         code: 'ALL',
       });
       setUserRole(null); // No specific role when viewing all branches
@@ -112,15 +120,17 @@ export const BranchProvider = ({ children }) => {
 
     const branch = branches.find(b => b.branch_id === branchId);
     if (branch) {
+      const bName = branch.branch?.branch_name || branch.branch?.name;
       setSelectedBranch({
         id: branch.branch_id,
-        name: branch.branch?.branch_name || branch.branch?.name,
+        name: bName,
+        branch_name: bName,
         code: branch.branch?.branch_code || branch.branch?.code,
       });
       setUserRole(branch.role?.role_name || branch.role?.name);
       localStorage.setItem('selectedBranchId', branchId);
       localStorage.setItem('userRole', branch.role?.role_name || branch.role?.name);
-      message.success(`Switched to ${branch.branch?.branch_name || branch.branch?.name}`);
+      message.success(`Switched to ${bName}`);
     }
   };
 

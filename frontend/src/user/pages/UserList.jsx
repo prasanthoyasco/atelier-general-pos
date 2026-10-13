@@ -1,12 +1,14 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Table, Button, Space, Popconfirm, message, Input, Tag, Grid, List, Card } from "antd";
-import { EditOutlined, DeleteOutlined, PlusOutlined, SearchOutlined } from "@ant-design/icons";
+import { Table, Button, Space, Popconfirm, message, Input, Tag, Grid, List, Card, Select } from "antd";
+import { EditOutlined, DeleteOutlined, PlusOutlined, SearchOutlined, ShopOutlined } from "@ant-design/icons";
 import userService from "../service/userService";
 
 const UserList = () => {
   const navigate = useNavigate();
   const [users, setUsers] = useState([]);
+  const [branches, setBranches] = useState([]);
+  const [selectedBranch, setSelectedBranch] = useState("all");
   const [loading, setLoading] = useState(false);
   const [searchText, setSearchText] = useState("");
   const [messageApi, contextHolder] = message.useMessage();
@@ -17,8 +19,22 @@ const UserList = () => {
   });
 
   useEffect(() => {
+    fetchBranches();
+  }, []);
+
+  useEffect(() => {
     fetchUsers();
-  }, [pagination.current, pagination.pageSize, searchText]);
+  }, [pagination.current, pagination.pageSize, searchText, selectedBranch]);
+
+  const fetchBranches = async () => {
+    try {
+      const response = await userService.getBranches();
+      const branchesData = response.data.data || [];
+      setBranches(branchesData);
+    } catch (error) {
+      console.error("Failed to fetch branches:", error);
+    }
+  };
 
   const fetchUsers = async () => {
     setLoading(true);
@@ -27,6 +43,7 @@ const UserList = () => {
         page: pagination.current,
         limit: pagination.pageSize,
         search: searchText,
+        branch_id: selectedBranch !== "all" ? selectedBranch : undefined,
       });
 
       const usersData = response.data.data || [];
@@ -39,6 +56,7 @@ const UserList = () => {
         phone: user.phone,
         role_id: user.role_id,
         Role: user.role ? { name: user.role.role_name } : { name: 'N/A' },
+        branches: user.branches || [],
         isActive: user.is_active,
         isDeleted: user.deleted_by !== null,
         createdAt: user.createdAt,
@@ -69,6 +87,11 @@ const UserList = () => {
   const handleSearch = (value) => {
     setSearchText(value);
     setPagination(prev => ({ ...prev, current: 1 })); // Reset to first page on search
+  };
+
+  const handleBranchChange = (value) => {
+    setSelectedBranch(value);
+    setPagination(prev => ({ ...prev, current: 1 })); // Reset to first page on branch change
   };
 
   const handleDelete = async (id) => {
@@ -102,6 +125,24 @@ const UserList = () => {
       dataIndex: ["Role", "name"],
       key: "role",
       render: (role) => <Tag color="blue">{role}</Tag>,
+    },
+    {
+      title: "Branches",
+      dataIndex: "branches",
+      key: "branches",
+      render: (userBranches) => (
+        <Space wrap size={[0, 4]}>
+          {userBranches && userBranches.length > 0 ? (
+            userBranches.map(b => (
+              <Tag key={b.id} color="purple">
+                {b.branch_name}
+              </Tag>
+            ))
+          ) : (
+            <span className="text-gray-400 text-xs">No Branch</span>
+          )}
+        </Space>
+      ),
     },
     {
       title: "Status",
@@ -146,20 +187,37 @@ const UserList = () => {
   return (
     <div className="p-4 sm:p-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
-        <h1 className="text-2xl font-bold m-0">Users</h1>
+        <div>
+          <h1 className="text-2xl font-bold m-0">Users</h1>
+          <p className="text-xs text-gray-500 m-0 mt-0.5">Manage users and filter by assigned branch</p>
+        </div>
         <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+          <Select
+            value={selectedBranch}
+            onChange={handleBranchChange}
+            suffixIcon={<ShopOutlined />}
+            placeholder="Filter by Branch"
+            className="w-full sm:w-[200px]"
+            options={[
+              { label: "All Branches", value: "all" },
+              ...branches.map(b => ({
+                label: b.branch_code ? `${b.branch_name} (${b.branch_code})` : b.branch_name,
+                value: b.id,
+              })),
+            ]}
+          />
           <Input
             placeholder="Search by name, email, or phone..."
             prefix={<SearchOutlined />}
             onChange={(e) => handleSearch(e.target.value)}
-            className="w-full sm:w-[300px]"
+            className="w-full sm:w-[260px]"
             allowClear
           />
           <Button
             type="primary"
             icon={<PlusOutlined />}
             onClick={() => navigate("/user/users/add")}
-            className="w-full sm:w-auto"
+            className="w-full sm:w-auto !text-white"
           >
             Add User
           </Button>
@@ -207,6 +265,20 @@ const UserList = () => {
                   <div className="flex justify-between items-center">
                     <span className="text-gray-500">Role:</span>
                     <Tag color="blue">{item.Role?.name}</Tag>
+                  </div>
+                  <div className="flex justify-between items-start">
+                    <span className="text-gray-500">Branches:</span>
+                    <div className="flex flex-wrap gap-1 justify-end max-w-[65%]">
+                      {item.branches && item.branches.length > 0 ? (
+                        item.branches.map(b => (
+                          <Tag key={b.id} color="purple">
+                            {b.branch_name}
+                          </Tag>
+                        ))
+                      ) : (
+                        <span className="text-gray-400 text-xs">No Branch</span>
+                      )}
+                    </div>
                   </div>
                   <div className="flex justify-between items-center">
                     <span className="text-gray-500">Status:</span>

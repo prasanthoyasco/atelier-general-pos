@@ -5,6 +5,7 @@ import dayjs from "dayjs";
 import empApi from "../../api/employeeApi";
 import { useEmployeeAuth } from "../../context/EmployeeAuthContext";
 import PayslipTemplate from "../components/PayslipTemplate";
+import { escapeHtml, sanitizeHtml } from "../../utils/sanitizeHtml.js";
 
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
@@ -35,15 +36,18 @@ export default function EmployeePayslip() {
   const handlePrint = () => {
     const content = document.getElementById("payslip-print");
     if (!content) return;
+    const safeTitle = escapeHtml(selected?.employee?.name || "Employee");
+    const safeBody = sanitizeHtml(content.outerHTML);
     const win = window.open("", "_blank");
+    if (!win) return;
     win.document.write(`
-      <html><head><title>Payslip - ${selected?.employee?.name}</title>
+      <html><head><title>Payslip - ${safeTitle}</title>
       <style>
         *{box-sizing:border-box;margin:0;padding:0;}
         body{font-family:'Segoe UI',sans-serif;background:#f1f5f9;padding:24px;}
         @media print{body{background:#fff;padding:0;}}
       </style>
-      </head><body>${content.outerHTML}</body></html>
+      </head><body>${safeBody}</body></html>
     `);
     win.document.close();
     win.focus();
@@ -105,7 +109,7 @@ export default function EmployeePayslip() {
         footer={
           <div className="flex justify-end gap-2">
             <button onClick={() => setModalOpen(false)} className="px-4 py-2 rounded-lg border border-gray-200 text-gray-600 text-sm">Close</button>
-            <button onClick={handlePrint} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white text-sm">
+            <button onClick={handlePrint} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 !text-white text-sm">
               <Download size={14} /> Download / Print
             </button>
           </div>

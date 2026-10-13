@@ -48,6 +48,11 @@ button:disabled {
   cursor: not-allowed;
 }
 
+button.text-white,
+.ant-btn.text-white {
+  color: #ffffff !important;
+}
+
 /* Prevent accidental text selection on interactive elements */
 a,
 button,

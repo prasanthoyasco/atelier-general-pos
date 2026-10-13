@@ -7,7 +7,8 @@ import SalesReport from "./pages/SalesReport";
 import SourceWiseReport from "./pages/SourceWiseReport";
 import CustomerAnalytics from "./pages/CustomerAnalytics";
 import POSPage from "./pages/POSPage";
-import { List, PlusCircle, UserPlus, BarChart, ShoppingCart, MonitorSmartphone, Utensils, Users } from "lucide-react";
+import DailyInventory from "../stock/pages/DailyInventory";
+import { List, PlusCircle, UserPlus, BarChart, ShoppingCart, MonitorSmartphone, Utensils, Users, ClipboardCheck } from "lucide-react";
 import ComingSoon from "./pages/ComingSoon";
 import { Tooltip } from "antd";
 import KOTKitchenDashboard from "./pages/KOTKitchenDashboard";
@@ -18,6 +19,11 @@ export const billingMenuItems = [
     key: "/billing/list",
     label: "Billing List",
     icon: <List size={18} />,
+  },
+  {
+    key: "/billing/daily-inventory",
+    label: "Daily Stock & Inventory",
+    icon: <ClipboardCheck size={18} />,
   },
   {
     key: "/billing/pos",
@@ -57,6 +63,7 @@ const BillingRoutes = () => {
   return (
     <Routes>
       <Route path="list" element={<BillingList />} />
+      <Route path="daily-inventory" element={<DailyInventory />} />
       <Route path="add" element={<BillingForm />} />
       <Route path="pos" element={<POSPage />} />
       <Route path="edit/:id" element={<BillingForm />} />

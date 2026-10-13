@@ -40,7 +40,7 @@ function CustomerAnalytics() {
 
       if (p === "custom" && dr) {
         params.startDate = dr[0].toISOString();
-        params.endDate   = dr[1].toISOString();
+        params.endDate = dr[1].toISOString();
       }
 
       const response = await reportService.getCustomerAnalytics(params);
@@ -157,12 +157,12 @@ function CustomerAnalytics() {
   return (
     <div className="p-4 md:p-6 bg-[#F8FAFC] min-h-screen font-sans">
       <div className="max-w-[1400px] mx-auto space-y-6">
-        
+
         {/* Header & Export */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-5 rounded-2xl border border-slate-200/60 shadow-sm">
           <div>
             <h1 className="text-xl md:text-2xl font-bold text-slate-800 flex items-center gap-2 mb-1">
-              <Users className="text-indigo-600" size={24} /> 
+              <Users className="text-indigo-600" size={24} />
               Customer Analytics
             </h1>
             <p className="text-slate-500 text-sm m-0">
@@ -180,7 +180,7 @@ function CustomerAnalytics() {
               <Dropdown overlay={exportMenu} placement="bottomRight" disabled={exporting}>
                 <button
                   disabled={exporting}
-                  className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 active:scale-95 text-white px-4 py-2 rounded-xl font-medium transition-all shadow-sm shadow-emerald-500/20 disabled:opacity-70 cursor-pointer"
+                  className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 active:scale-95 !text-white px-4 py-2 rounded-xl font-medium transition-all shadow-sm shadow-emerald-500/20 disabled:opacity-70 cursor-pointer"
                 >
                   <Download size={18} />
                   <span>{exporting ? "Exporting..." : "Export"}</span>
@@ -193,35 +193,35 @@ function CustomerAnalytics() {
         {/* Filters Strip */}
         <div className="bg-white p-3 rounded-2xl border border-slate-200/60 shadow-sm flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-2 px-2 border-r border-slate-200">
-             <Calendar size={18} className="text-slate-400" />
-             <span className="text-sm font-semibold text-slate-600 mr-2">Period</span>
+            <Calendar size={18} className="text-slate-400" />
+            <span className="text-sm font-semibold text-slate-600 mr-2">Period</span>
           </div>
           <div className="flex bg-slate-100/80 p-1 rounded-xl flex-wrap">
-             {[
-               { value: "today", label: "Today" },
-               { value: "yesterday", label: "Yesterday" },
-               { value: "this_month", label: "This Month" },
-               { value: "this_year", label: "This Year" },
-               { value: "custom", label: "Custom" },
-             ].map((opt) => (
-                <button
-                  key={opt.value}
-                  onClick={() => handlePeriodChange(opt.value)}
-                  className={`px-4 py-1.5 text-sm font-medium rounded-lg transition-all cursor-pointer ${period === opt.value ? "bg-white text-indigo-600 shadow-sm border border-slate-200/50" : "text-slate-500 hover:text-slate-700 hover:bg-slate-200/50"}`}
-                >
-                  {opt.label}
-                </button>
-             ))}
+            {[
+              { value: "today", label: "Today" },
+              { value: "yesterday", label: "Yesterday" },
+              { value: "this_month", label: "This Month" },
+              { value: "this_year", label: "This Year" },
+              { value: "custom", label: "Custom" },
+            ].map((opt) => (
+              <button
+                key={opt.value}
+                onClick={() => handlePeriodChange(opt.value)}
+                className={`px-4 py-1.5 text-sm font-medium rounded-lg transition-all cursor-pointer ${period === opt.value ? "bg-white text-indigo-600 shadow-sm border border-slate-200/50" : "text-slate-500 hover:text-slate-700 hover:bg-slate-200/50"}`}
+              >
+                {opt.label}
+              </button>
+            ))}
           </div>
-          
+
           {period === "custom" && (
             <div className="ml-auto w-full md:w-auto mt-2 md:mt-0">
-               <RangePicker
-                  value={dateRange}
-                  onChange={setDateRange}
-                  className="h-[36px] rounded-xl w-full md:w-[260px]"
-                  format="DD MMM YYYY"
-                />
+              <RangePicker
+                value={dateRange}
+                onChange={setDateRange}
+                className="h-[36px] rounded-xl w-full md:w-[260px]"
+                format="DD MMM YYYY"
+              />
             </div>
           )}
         </div>
@@ -230,10 +230,10 @@ function CustomerAnalytics() {
           <ReportSkeleton />
         ) : reportData ? (
           <div className="space-y-6">
-            
+
             {/* Premium Summary Cards */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4 md:gap-6">
-              
+
               <div className="bg-white rounded-2xl border border-slate-200/60 shadow-sm p-5 flex items-center gap-4 hover:border-indigo-200 hover:shadow-md transition-all">
                 <div className="w-12 h-12 rounded-full bg-indigo-50 flex items-center justify-center shrink-0 border border-indigo-100">
                   <Users size={22} className="text-indigo-600" />
@@ -278,23 +278,23 @@ function CustomerAnalytics() {
 
             {/* Tables Layout */}
             <div className="space-y-6">
-              
+
               {/* Top Spenders */}
               {reportData.top_spenders && reportData.top_spenders.length > 0 && (
                 <div className="bg-white rounded-2xl border border-slate-200/60 shadow-sm overflow-hidden flex flex-col">
-                   <div className="bg-slate-50 px-5 py-4 border-b border-slate-200 flex items-center gap-2">
-                      <Award size={18} className="text-slate-500" />
-                      <h3 className="font-bold text-slate-700 m-0 text-base">Top 10 Spenders</h3>
-                   </div>
-                   <div className="p-0 overflow-x-auto">
-                      <Table
-                        dataSource={reportData.top_spenders}
-                        columns={topSpendersColumns}
-                        pagination={false}
-                        rowKey={(record, i) => `${record.customer_name}-${i}`}
-                        size="middle"
-                      />
-                   </div>
+                  <div className="bg-slate-50 px-5 py-4 border-b border-slate-200 flex items-center gap-2">
+                    <Award size={18} className="text-slate-500" />
+                    <h3 className="font-bold text-slate-700 m-0 text-base">Top 10 Spenders</h3>
+                  </div>
+                  <div className="p-0 overflow-x-auto">
+                    <Table
+                      dataSource={reportData.top_spenders}
+                      columns={topSpendersColumns}
+                      pagination={false}
+                      rowKey={(record, i) => `${record.customer_name}-${i}`}
+                      size="middle"
+                    />
+                  </div>
                 </div>
               )}
             </div>
@@ -303,7 +303,7 @@ function CustomerAnalytics() {
         ) : (
           <div className="bg-white rounded-2xl border border-slate-200/60 shadow-sm p-16 flex flex-col items-center justify-center text-center">
             <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mb-4">
-               <BarChart3 className="text-slate-300" size={32} />
+              <BarChart3 className="text-slate-300" size={32} />
             </div>
             <h3 className="text-lg font-bold text-slate-700 mb-1">No Data Selected</h3>
             <p className="text-slate-500 text-sm">Select a period to generate the customer analytics.</p>

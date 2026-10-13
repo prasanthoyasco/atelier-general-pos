@@ -21,6 +21,7 @@ import {
   PrinterOutlined,
   ReloadOutlined,
   DownloadOutlined,
+  ShopOutlined,
 } from "@ant-design/icons";
 import userService from "../../user/service/userService";
 import localPrintService from "../../billing/service/localPrintService";
@@ -33,6 +34,7 @@ const Settings = () => {
   const [securityForm] = Form.useForm();
   const [receiptForm] = Form.useForm();
   const [loading, setLoading] = useState(false);
+  const [savingStore, setSavingStore] = useState(false);
   const [fetchingData, setFetchingData] = useState(false);
   const [activeTab, setActiveTab] = useState("profile");
   const [userData, setUserData] = useState(null);
@@ -165,14 +167,23 @@ const Settings = () => {
   };
 
   const handleReceiptSettingsSubmit = (values) => {
-    saveReceiptSettings(values);
-    message.success("Receipt header and footer saved");
+    setSavingStore(true);
+    try {
+      const saved = saveReceiptSettings(values);
+      receiptForm.setFieldsValue(saved);
+      message.success(`Store settings saved! Store name is now "${saved.storeName}".`);
+    } catch (error) {
+      console.error("Failed to save store settings:", error);
+      message.error("Failed to save store settings");
+    } finally {
+      setSavingStore(false);
+    }
   };
 
   const resetReceiptSettings = () => {
-    saveReceiptSettings(defaultReceiptSettings);
-    receiptForm.setFieldsValue(defaultReceiptSettings);
-    message.success("Receipt settings reset");
+    const resetValues = saveReceiptSettings(defaultReceiptSettings);
+    receiptForm.setFieldsValue(resetValues);
+    message.success("Store settings reset to defaults (Pozhudhu)");
   };
 
   const printTestReceipt = async () => {
@@ -202,7 +213,7 @@ const Settings = () => {
 
   const downloadInstallerCommand = () => {
     const selectedPrinter = printerName || "80mm Series Printer";
-    const script = `# DUCH Local Print Service installer\n# Run this from the extracted local-print-service folder.\n\npowershell.exe -NoProfile -ExecutionPolicy Bypass -File .\\install-startup-shortcut.ps1 -PrinterName "${selectedPrinter}"\n\n# For Scheduled Task mode, run PowerShell as Administrator:\n# powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\\install-windows-task.ps1 -PrinterName "${selectedPrinter}"\n`;
+    const script = `# Local Print Service installer\n# Run this from the extracted local-print-service folder.\n\npowershell.exe -NoProfile -ExecutionPolicy Bypass -File .\\install-startup-shortcut.ps1 -PrinterName "${selectedPrinter}"\n\n# For Scheduled Task mode, run PowerShell as Administrator:\n# powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\\install-windows-task.ps1 -PrinterName "${selectedPrinter}"\n`;
     const blob = new Blob([script], { type: "text/plain;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
@@ -219,7 +230,15 @@ const Settings = () => {
       </div>
 
       <Card variant={"borderless"}>
-        <Tabs activeKey={activeTab} onChange={(key) => setActiveTab(key)}>
+        <Tabs
+          activeKey={activeTab}
+          onChange={(key) => {
+            setActiveTab(key);
+            if (key === "store" || key === "printer") {
+              receiptForm.setFieldsValue(getReceiptSettings());
+            }
+          }}
+        >
           <TabPane
             tab={
               <span>
@@ -389,7 +408,116 @@ const Settings = () => {
           <TabPane
             tab={
               <span>
-                <PrinterOutlined /> Printer
+                <ShopOutlined /> Store Settings
+              </span>
+            }
+            key="store"
+          >
+            <div style={{ maxWidth: 840 }}>
+              <div className="mb-6 pb-3 border-b border-gray-100">
+                <h2 className="text-lg font-semibold text-gray-800 m-0">Store & Receipt Configuration</h2>
+                <p className="text-sm text-gray-500 m-0 mt-1">
+                  Configure your store name and receipt header details. These apply to all printed receipts, billing copies, and barcode labels.
+                </p>
+              </div>
+
+              <Form
+                form={receiptForm}
+                layout="vertical"
+                initialValues={getReceiptSettings()}
+                onFinish={handleReceiptSettingsSubmit}
+              >
+                <Row gutter={16}>
+                  <Col xs={24} md={12}>
+                    <Form.Item
+                      label="Store Name"
+                      name="storeName"
+                      rules={[
+                        { required: true, message: "Please enter your store name" },
+                        { min: 2, message: "Store name must be at least 2 characters" }
+                      ]}
+                      tooltip="This name appears as the prominent header on bills, receipts, and labels"
+                    >
+                      <Input placeholder="Pozhudhu" size="large" />
+                    </Form.Item>
+                  </Col>
+                  <Col xs={24} md={12}>
+                    <Form.Item
+                      label="Bill Title"
+                      name="billTitle"
+                      tooltip="Header title under store name (e.g., CUSTOMER COPY or TAX INVOICE)"
+                    >
+                      <Input placeholder="CUSTOMER COPY" size="large" />
+                    </Form.Item>
+                  </Col>
+                </Row>
+
+                <Row gutter={16}>
+                  <Col xs={24} md={12}>
+                    <Form.Item label="Instagram ID" name="instagram">
+                      <Input placeholder="@pozhudhu_cafe" />
+                    </Form.Item>
+                  </Col>
+                  <Col xs={24} md={12}>
+                    <Form.Item label="GST Number (GSTIN)" name="gstin">
+                      <Input placeholder="33AYDPV172S01ZO" />
+                    </Form.Item>
+                  </Col>
+                </Row>
+
+                <Row gutter={16}>
+                  <Col xs={24} md={12}>
+                    <Form.Item label="Cell Number 1" name="cell1">
+                      <Input placeholder="9629103751" />
+                    </Form.Item>
+                  </Col>
+                  <Col xs={24} md={12}>
+                    <Form.Item label="Cell Number 2" name="cell2">
+                      <Input placeholder="9042551109" />
+                    </Form.Item>
+                  </Col>
+                </Row>
+
+                <Divider style={{ margin: "16px 0" }} />
+
+                <Form.Item label="Receipt Footer Title" name="footerTitle">
+                  <Input placeholder="Terms & Conditions:" />
+                </Form.Item>
+
+                <Form.Item
+                  label="Receipt Footer Terms"
+                  name="footerTerms"
+                  tooltip="Enter each term or condition on a new line"
+                >
+                  <Input.TextArea rows={5} placeholder="One term per line" />
+                </Form.Item>
+
+                <Space wrap size="middle">
+                  <Button
+                    type="primary"
+                    htmlType="submit"
+                    icon={<SaveOutlined />}
+                    loading={savingStore}
+                    size="large"
+                  >
+                    Save Store Settings
+                  </Button>
+                  <Button
+                    onClick={resetReceiptSettings}
+                    icon={<ReloadOutlined />}
+                    size="large"
+                  >
+                    Reset to Pozhudhu Defaults
+                  </Button>
+                </Space>
+              </Form>
+            </div>
+          </TabPane>
+
+          <TabPane
+            tab={
+              <span>
+                <PrinterOutlined /> Thermal Printer
               </span>
             }
             key="printer"
@@ -402,7 +530,7 @@ const Settings = () => {
                 description={
                   printServiceStatus
                     ? `Connected to ${printServiceStatus.service}. Default printer: ${printServiceStatus.default_printer || "Not set"}`
-                    : "Install and run DUCH Local Print Service on each cashier computer. The web app prints to http://127.0.0.1:9123."
+                    : "Install and run Local Print Service on each cashier computer. The web app prints to http://127.0.0.1:9123."
                 }
               />
 
@@ -446,67 +574,25 @@ const Settings = () => {
 
               <Divider />
 
-              <Form
-                form={receiptForm}
-                layout="vertical"
-                onFinish={handleReceiptSettingsSubmit}
+              <Card
+                size="small"
+                title={<span><ShopOutlined /> Receipt Header & Store Details</span>}
+                extra={
+                  <Button type="link" onClick={() => setActiveTab("store")}>
+                    Edit Store Settings →
+                  </Button>
+                }
               >
-                <Row gutter={16}>
-                  <Col xs={24} md={12}>
-                    <Form.Item label="Store Name" name="storeName">
-                      <Input placeholder="ANNAPOORANI" />
-                    </Form.Item>
-                  </Col>
-                  <Col xs={24} md={12}>
-                    <Form.Item label="Bill Title" name="billTitle">
-                      <Input placeholder="CUSTOMER COPY" />
-                    </Form.Item>
-                  </Col>
-                </Row>
-
-                <Row gutter={16}>
-                  <Col xs={24} md={12}>
-                    <Form.Item label="Instagram ID" name="instagram">
-                      <Input placeholder="annapoorani_sweets" />
-                    </Form.Item>
-                  </Col>
-                  <Col xs={24} md={12}>
-                    <Form.Item label="GST Number" name="gstin">
-                      <Input placeholder="33AYDPV1722F1ZO" />
-                    </Form.Item>
-                  </Col>
-                </Row>
-
-                <Row gutter={16}>
-                  <Col xs={24} md={12}>
-                    <Form.Item label="Cell Number 1" name="cell1">
-                      <Input placeholder="7010668139" />
-                    </Form.Item>
-                  </Col>
-                  <Col xs={24} md={12}>
-                    <Form.Item label="Cell Number 2" name="cell2">
-                      <Input placeholder="89764718464" />
-                    </Form.Item>
-                  </Col>
-                </Row>
-
-                <Form.Item label="Footer Title" name="footerTitle">
-                  <Input placeholder="Terms & Conditions:" />
-                </Form.Item>
-
-                <Form.Item label="Footer Terms" name="footerTerms">
-                  <Input.TextArea rows={5} placeholder="One term per line" />
-                </Form.Item>
-
-                <Space wrap>
-                  <Button type="primary" htmlType="submit" icon={<SaveOutlined />}>
-                    Save Header/Footer
-                  </Button>
-                  <Button onClick={resetReceiptSettings}>
-                    Reset Header/Footer
-                  </Button>
-                </Space>
-              </Form>
+                <p className="text-sm text-gray-600 mb-2">
+                  Receipts printed via this thermal printer will use your configured store branding:
+                </p>
+                <div className="bg-gray-50 p-3 rounded border text-sm space-y-1">
+                  <div><strong>Store Name:</strong> {receiptForm.getFieldValue("storeName") || getReceiptSettings().storeName}</div>
+                  <div><strong>Bill Title:</strong> {receiptForm.getFieldValue("billTitle") || getReceiptSettings().billTitle}</div>
+                  <div><strong>Instagram:</strong> {receiptForm.getFieldValue("instagram") || getReceiptSettings().instagram}</div>
+                  <div><strong>GSTIN:</strong> {receiptForm.getFieldValue("gstin") || getReceiptSettings().gstin}</div>
+                </div>
+              </Card>
             </Space>
           </TabPane>
         </Tabs>
