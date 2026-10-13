@@ -1,37 +1,31 @@
 import { Router } from "express";
 import userController from "../controller/user.controller.js";
-// (optionally) import authMiddleware to protect routes
-import { verifyToken } from "../../middleware/auth.js";
+import { verifyToken, authorize } from "../../middleware/auth.js";
+import { authLimiter, otpLimiter } from "../../middleware/rateLimiter.js";
+
 const router = Router();
 
-// Specific routes MUST come before parameterized routes
-// PUBLIC ROUTES (no auth required)
-router.post("/login", (req, res, next) => {
-  console.log("=== LOGIN ROUTE HIT ===");
-  console.log("Body:", req.body);
-  console.log("Headers:", req.headers);
-  next();
-}, userController.loginUser);
-
-router.post("/logout", userController.logoutUser);
-router.post("/refresh-token", userController.refreshAccessToken);
-router.post("/send-otp", userController.sendOtpToken);
+// PUBLIC ROUTES (with rate limiting protection)
+router.post("/login", authLimiter, userController.loginUser);
+router.post("/refresh-token", authLimiter, userController.refreshAccessToken);
+router.post("/send-otp", otpLimiter, userController.sendOtpToken);
 router.get("/exists", userController.userAlreadyExists);
 
-// PROTECTED ROUTES (auth required)
-// IMPORTANT: /me routes MUST come before /:id to avoid being caught by the parameterized route
+// PROTECTED ROUTES - Authenticated User Self-Service
+// (MUST come before /:id parameterized routes)
+router.post("/logout", verifyToken, userController.logoutUser);
 router.get("/me", verifyToken, userController.getMe);
 router.get("/me/profile", verifyToken, userController.getMe);
-router.post("/change-password", verifyToken, userController.changePassword);
+router.post("/change-password", verifyToken, authLimiter, userController.changePassword);
 
-// CRUD routes
-router.post("/", userController.createUser);
-router.get("/", userController.getUsers);
+// PROTECTED ROUTES - User Management (Requires administrative permissions)
+router.post("/", verifyToken, authorize(['user.create', 'user.manage']), userController.createUser);
+router.get("/", verifyToken, authorize(['user.view', 'user.manage']), userController.getUsers);
 
-// Parameterized routes MUST come last to avoid catching specific routes
-router.get("/:id", userController.getUserById);
-router.put("/:id", userController.updateUserById);
-router.delete("/:id", userController.softDeleteUser);
-router.patch("/:id/restore", userController.restoreUser);
+// Parameterized routes (placed last to prevent collision)
+router.get("/:id", verifyToken, authorize(['user.view', 'user.manage']), userController.getUserById);
+router.put("/:id", verifyToken, authorize(['user.edit', 'user.manage']), userController.updateUserById);
+router.delete("/:id", verifyToken, authorize(['user.delete', 'user.manage']), userController.softDeleteUser);
+router.patch("/:id/restore", verifyToken, authorize(['user.edit', 'user.delete', 'user.manage']), userController.restoreUser);
 
 export default router;

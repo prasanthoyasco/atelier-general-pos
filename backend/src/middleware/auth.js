@@ -1,8 +1,16 @@
-
 import jwt from 'jsonwebtoken';
 
 // Get secret at runtime, not at module load time
-const getSecretKey = () => process.env.JWT_SECRET || "3540e43edf1f1ed4811552d2b0d5a9fd1b4b23b8b7f0c48c83c621ed103454a6";
+const getSecretKey = () => {
+    const secret = process.env.JWT_SECRET;
+    if (!secret) {
+        if (process.env.NODE_ENV === 'production') {
+            throw new Error('FATAL: JWT_SECRET environment variable is missing');
+        }
+        console.warn('WARNING: JWT_SECRET is not set in environment.');
+    }
+    return secret || 'dev-fallback-local-only-secret-key-change-in-prod';
+};
 
 export const verifyToken = async (req, res, next) => {
     const authHeader = req.headers['authorization'];
@@ -12,10 +20,10 @@ export const verifyToken = async (req, res, next) => {
     }
 
     const token = authHeader.split(' ')[1];
-    const SECRET_KEY = getSecretKey(); // Get secret at runtime
+    const SECRET_KEY = getSecretKey();
 
     try {
-        const decoded = jwt.verify(token, SECRET_KEY);
+        const decoded = jwt.verify(token, SECRET_KEY, { algorithms: ['HS256'] });
         req.user = decoded; // Attach decoded user payload to request
 
         // Auto-enrich user role & permissions from DB if missing or empty (for legacy or active cached tokens)

@@ -6,24 +6,24 @@ import { authenticateBranch, authenticateBranchRole } from "../../middleware/aut
 
 const router = express.Router();
 
-// ✅ Create billing - requires branch access
-router.post("/billing", verifyToken, authenticateBranch(), billingController.create);
+// ✅ Create billing - requires branch access and billing creation permission
+router.post("/billing", verifyToken, authorize(["billing.create", "billing.manage"]), authenticateBranch(), billingController.create);
 
 // ✅ Get active kitchen queue
 router.get("/billing/kitchen-queue", verifyToken, authorize(["kot.view", "billing.view", "billing.manage"]), authenticateBranch(), billingController.getKitchenQueue);
 
 // ✅ Get all billings - allows multiple branches
-router.get("/billing", verifyToken, authenticateBranch(true), billingController.getAll);
+router.get("/billing", verifyToken, authorize(["billing.view", "billing.manage"]), authenticateBranch(true), billingController.getAll);
 
 // ✅ Update KOT Status
 router.patch("/billing/:id/kot-status", verifyToken, authorize(["kot.manage", "kot.serve", "billing.manage"]), authenticateBranch(), billingController.updateKOTStatus);
 
 // ✅ Get billing by ID - requires branch access
-router.get("/billing/:id", verifyToken, authenticateBranch(), billingController.getById);
+router.get("/billing/:id", verifyToken, authorize(["billing.view", "billing.manage"]), authenticateBranch(), billingController.getById);
 
 // ✅ Update billing - requires manager/admin role
-router.put("/billing/:id", verifyToken, authenticateBranch(), billingController.update);
+router.put("/billing/:id", verifyToken, authorize(["billing.edit", "billing.manage"]), authenticateBranch(), billingController.update);
 
-router.delete("/billing/:id", verifyToken, authenticateBranch(), authenticateBranchRole(['admin']), billingController.delete);
+router.delete("/billing/:id", verifyToken, authorize(["billing.delete", "billing.manage"]), authenticateBranch(), authenticateBranchRole(['admin']), billingController.delete);
 
 export default router;

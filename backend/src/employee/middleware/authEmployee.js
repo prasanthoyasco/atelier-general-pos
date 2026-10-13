@@ -1,6 +1,15 @@
 import jwt from 'jsonwebtoken';
 
-const getSecret = () => process.env.JWT_SECRET || '3540e43edf1f1ed4811552d2b0d5a9fd1b4b23b8b7f0c48c83c621ed103454a6';
+const getSecret = () => {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('FATAL: JWT_SECRET environment variable is missing in production');
+    }
+    console.warn('WARNING: JWT_SECRET is not set in environment.');
+  }
+  return secret || 'dev-fallback-local-only-secret-key-change-in-prod';
+};
 
 export const verifyEmployeeToken = (req, res, next) => {
   const authHeader = req.headers['authorization'];
@@ -9,13 +18,13 @@ export const verifyEmployeeToken = (req, res, next) => {
   }
   const token = authHeader.split(' ')[1];
   try {
-    const decoded = jwt.verify(token, getSecret());
+    const decoded = jwt.verify(token, getSecret(), { algorithms: ['HS256'] });
     if (decoded.role !== 'employee') {
       return res.status(403).json({ message: 'Access denied: not an employee token' });
     }
     req.employee = decoded;
     next();
   } catch (err) {
-    return res.status(403).json({ message: 'Invalid or expired token' });
+    return res.status(401).json({ message: 'Invalid or expired token' });
   }
 };

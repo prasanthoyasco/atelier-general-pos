@@ -85,6 +85,19 @@ const inwardController = {
       if (!inward) {
         return res.status(404).json({ error: "Inward not found" });
       }
+
+      // Check branch boundary
+      const userRole = (req.user?.role_name || '').toLowerCase().replace(/_/g, ' ');
+      const isSuperAdminOrAdmin = userRole === 'super admin' || userRole === 'admin';
+      if (!isSuperAdminOrAdmin && req.branchContext) {
+        const allowedBranchIds = req.branchContext.multipleBranches
+          ? (req.branchContext.branches || []).map(b => b.branchId)
+          : [req.branchContext.branchId];
+        if (inward.branch_id && !allowedBranchIds.includes(inward.branch_id)) {
+          return res.status(403).json({ error: "Access denied: record belongs to a different branch" });
+        }
+      }
+
       return res.json(inward);
     } catch (err) {
       return res.status(500).json({ error: err.message });
@@ -94,6 +107,23 @@ const inwardController = {
   // ✅ Update inward (and items if provided)
   async update(req, res) {
     try {
+      const existing = await inwardService.getInwardById(req.params.id);
+      if (!existing) {
+        return res.status(404).json({ error: "Inward not found" });
+      }
+
+      // Check branch boundary
+      const userRole = (req.user?.role_name || '').toLowerCase().replace(/_/g, ' ');
+      const isSuperAdminOrAdmin = userRole === 'super admin' || userRole === 'admin';
+      if (!isSuperAdminOrAdmin && req.branchContext) {
+        const allowedBranchIds = req.branchContext.multipleBranches
+          ? (req.branchContext.branches || []).map(b => b.branchId)
+          : [req.branchContext.branchId];
+        if (existing.branch_id && !allowedBranchIds.includes(existing.branch_id)) {
+          return res.status(403).json({ error: "Access denied: cannot modify record from a different branch" });
+        }
+      }
+
       const data = req.body;
 
       // Get branch_id from branchContext
@@ -114,10 +144,6 @@ const inwardController = {
         data
       );
 
-      if (!inward) {
-        return res.status(404).json({ error: "Inward not found" });
-      }
-
       return res.json({
         message: "Inward updated successfully",
         data: inward,
@@ -130,9 +156,21 @@ const inwardController = {
   // ✅ Delete inward (soft delete inward + items)
   async delete(req, res) {
     try {
-      const inward = await inwardService.getInwardById(req.params.id);
-      if (!inward) {
+      const existing = await inwardService.getInwardById(req.params.id);
+      if (!existing) {
         return res.status(404).json({ error: "Inward not found" });
+      }
+
+      // Check branch boundary
+      const userRole = (req.user?.role_name || '').toLowerCase().replace(/_/g, ' ');
+      const isSuperAdminOrAdmin = userRole === 'super admin' || userRole === 'admin';
+      if (!isSuperAdminOrAdmin && req.branchContext) {
+        const allowedBranchIds = req.branchContext.multipleBranches
+          ? (req.branchContext.branches || []).map(b => b.branchId)
+          : [req.branchContext.branchId];
+        if (existing.branch_id && !allowedBranchIds.includes(existing.branch_id)) {
+          return res.status(403).json({ error: "Access denied: cannot delete record from a different branch" });
+        }
       }
 
       const result = await inwardService.deleteInwardWithItems(

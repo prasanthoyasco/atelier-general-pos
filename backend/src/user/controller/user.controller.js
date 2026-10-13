@@ -65,19 +65,12 @@ const userController = {
         ...req.body,
         role_id: req.body.role_id || req.body.role,
       };
-      
-      console.log('Payload after mapping:', JSON.stringify(payload, null, 2));
-      
+
       const data = registerSchema.body.parse(payload);
       const user = await userService.createUser(data);
-      
-      console.log('User created successfully:', user.id);
-      console.log('===================');
-      
+
       res.status(201).json({ message: "User created", user });
     } catch (err) {
-      console.log('ERROR creating user:', err.message);
-      console.log('===================');
       res.status(400).json({ error: err.message });
     }
   },
@@ -102,92 +95,61 @@ const userController = {
 
   async getMe(req, res) {
     try {
-      console.log('=== GET ME ===');
-      console.log('req.user:', req.user);
-      
       if (!req.user || !req.user.id) {
-        console.log('ERROR: req.user or req.user.id is undefined');
         return res.status(401).json({ error: 'Authentication required' });
       }
-      
-      console.log('Fetching user with ID:', req.user.id);
+
       const user = await userService.getMe(req.user.id);
-      console.log('User found:', user.username);
-      console.log('===================');
-      
       res.json(user);
     } catch (err) {
-      console.log('ERROR in getMe:', err.message);
-      console.log('===================');
       res.status(404).json({ error: err.message });
     }
   },
 
   async loginUser(req, res) {
     try {
-      console.log("=== LOGIN DEBUG START ===");
-      console.log("1. Raw Request Body:", JSON.stringify(req.body, null, 2));
-      console.log("2. Request Headers:", JSON.stringify(req.headers, null, 2));
-      
       const data = userLoginSchema.body.parse(req.body);
-      console.log("3. Parsed Data:", JSON.stringify(data, null, 2));
-      
+
       if (!data.identifier || !data.password) {
-        console.log("4. ERROR: Missing identifier or password");
         return res.status(400).json({ error: "Identifier and password are required" });
       }
 
-      console.log("5. Calling userService.loginUser...");
       const result = await userService.loginUser(data);
-      console.log("6. Login successful, user:", result.user.username);
-      console.log("=== LOGIN DEBUG END ===");
-      
       res.json({ message: "Login success", ...result });
     } catch (err) {
-      console.log("=== LOGIN ERROR ===");
-      console.log("Error message:", err.message);
-      console.log("Error stack:", err.stack);
-      console.log("===================");
       res.status(400).json({ error: err.message });
     }
   },
 
   async updateUserById(req, res) {
     try {
-      console.log('=== UPDATE USER ===');
-      console.log('Request params:', req.params);
-      console.log('Request body:', JSON.stringify(req.body, null, 2));
-      console.log('Request user:', req.user);
-      
       const data = updateUserSchema.body.parse(req.body);
-      
+
+      // Prevent non-admin users from escalating their own or other users' roles
+      const userRole = (req.user?.role_name || '').toLowerCase().replace(/_/g, ' ');
+      const isAdmin = userRole === 'super admin' || userRole === 'admin';
+      if (data.role_id && !isAdmin) {
+        delete data.role_id;
+      }
+
       // Get updated_by from req.user if available, otherwise null
       const updatedBy = req.user?.id || null;
-      
-      console.log('Parsed data:', JSON.stringify(data, null, 2));
-      console.log('Updated by:', updatedBy);
-      
+
       const user = await userService.updateUserById(
         req.params.id,
         data,
         updatedBy
       );
-      
-      console.log('User updated successfully');
-      console.log('===================');
-      
+
       res.json({ message: "User updated", user });
     } catch (err) {
-      console.log('ERROR updating user:', err.message);
-      console.log('Error stack:', err.stack);
-      console.log('===================');
       res.status(400).json({ error: err.message });
     }
   },
 
   async softDeleteUser(req, res) {
     try {
-      await userService.softDeleteUser(req.params.id, req.user.id);
+      await userService.softDeleteUser(req.params.id, req.user?.id || null);
       res.json({ message: "User soft deleted" });
     } catch (err) {
       res.status(400).json({ error: err.message });
@@ -228,7 +190,9 @@ async refreshAccessToken(req, res) {
 
   async logoutUser(req, res) {
     try {
-      await userService.logoutUser(req.user.id);
+      if (req.user?.id) {
+        await userService.logoutUser(req.user.id);
+      }
       res.json({ message: "Logged out" });
     } catch (err) {
       res.status(400).json({ error: err.message });
@@ -237,8 +201,9 @@ async refreshAccessToken(req, res) {
 
   async sendOtpToken(req, res) {
     try {
-      const otp = await userService.sendOtpToken(req.body.identifier);
-      res.json({ message: "OTP sent", otp });
+      await userService.sendOtpToken(req.body.identifier);
+      // Redact raw OTP from API response for production security
+      res.json({ message: "OTP sent successfully" });
     } catch (err) {
       res.status(400).json({ error: err.message });
     }

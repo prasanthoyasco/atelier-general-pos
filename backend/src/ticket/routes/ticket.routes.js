@@ -3,6 +3,7 @@ import multer from 'multer';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
+import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import ticketController from '../controller/ticket.controller.js';
 import { verifyToken } from '../../middleware/auth.js';
@@ -14,39 +15,61 @@ const __dirname  = path.dirname(__filename);
 const UPLOAD_DIR = path.join(__dirname, '../../../../public/uploads/tickets');
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
+const ALLOWED_EXTENSIONS = new Set(['jpeg', 'jpg', 'png', 'gif', 'webp', 'mp4', 'webm', 'mov', 'avi', 'mp3', 'wav', 'ogg', 'pdf']);
+const ALLOWED_MIMES = new Set([
+  'image/jpeg', 'image/png', 'image/gif', 'image/webp',
+  'video/mp4', 'video/webm', 'video/quicktime', 'video/x-msvideo',
+  'audio/mpeg', 'audio/wav', 'audio/ogg',
+  'application/pdf'
+]);
+
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, UPLOAD_DIR),
   filename:    (req, file, cb) => {
-    const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
-    cb(null, `ticket-${unique}${path.extname(file.originalname)}`);
+    const ext = path.extname(file.originalname).toLowerCase().replace('.', '');
+    const randomHex = crypto.randomBytes(8).toString('hex');
+    cb(null, `ticket-${Date.now()}-${randomHex}.${ext}`);
   },
 });
 
 const upload = multer({
   storage,
-  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB max
+  limits: { fileSize: 25 * 1024 * 1024 }, // 25MB max
   fileFilter: (req, file, cb) => {
-    const allowed = /jpeg|jpg|png|gif|webp|mp4|webm|mov|avi|mp3|wav|ogg|pdf/;
     const ext = path.extname(file.originalname).toLowerCase().replace('.', '');
-    if (allowed.test(ext)) cb(null, true);
-    else cb(new Error(`File type .${ext} is not allowed`));
+    if (ALLOWED_EXTENSIONS.has(ext) && (ALLOWED_MIMES.has(file.mimetype) || file.mimetype.startsWith('image/'))) {
+      cb(null, true);
+    } else {
+      cb(new Error(`File type .${ext} or MIME ${file.mimetype} is not allowed`));
+    }
   },
 });
 
 // Developer JWT verify middleware
+const getDeveloperSecret = () => {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('FATAL: JWT_SECRET environment variable is missing in production');
+    }
+    console.warn('WARNING: JWT_SECRET is not set in environment.');
+  }
+  return secret || 'dev-fallback-local-only-secret-key-change-in-prod';
+};
+
 const verifyDeveloper = (req, res, next) => {
   const authHeader = req.headers['authorization'];
   if (!authHeader?.startsWith('Bearer '))
     return res.status(401).json({ success: false, message: 'Missing token' });
   const token = authHeader.split(' ')[1];
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || '3540e43edf1f1ed4811552d2b0d5a9fd1b4b23b8b7f0c48c83c621ed103454a6');
+    const decoded = jwt.verify(token, getDeveloperSecret(), { algorithms: ['HS256'] });
     if (decoded.role_name !== 'developer')
       return res.status(403).json({ success: false, message: 'Developer access only' });
     req.developer = decoded;
     next();
   } catch {
-    return res.status(403).json({ success: false, message: 'Invalid or expired token' });
+    return res.status(401).json({ success: false, message: 'Invalid or expired token' });
   }
 };
 

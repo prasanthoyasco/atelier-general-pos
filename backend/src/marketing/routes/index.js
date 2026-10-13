@@ -1,13 +1,17 @@
 import express from 'express';
-
-const router = express.Router();
-
 import { initiateMetaAuth, handleMetaCallback, disconnectMeta, initiateGoogleAuth, handleGoogleCallback, disconnectGoogle } from '../controllers/oauth.controller.js';
 import { getEligibleCustomers, sendWhatsAppCampaign } from '../controllers/whatsapp.controller.js';
 import * as metaController from '../controllers/meta.controller.js';
+import { verifyToken, authorize } from '../../middleware/auth.js';
 
-// Mock endpoints for the Marketing module
-router.get('/marketing/dashboard', (req, res) => {
+const router = express.Router();
+
+// Public OAuth Callback Routes (Redirected from Meta and Google)
+router.get('/marketing/oauth/meta/callback', handleMetaCallback);
+router.get('/marketing/oauth/google/callback', handleGoogleCallback);
+
+// Dashboard
+router.get('/marketing/dashboard', verifyToken, authorize(['marketing.view', 'marketing.manage']), (req, res) => {
     res.json({
         success: true,
         message: 'Marketing dashboard data',
@@ -15,29 +19,27 @@ router.get('/marketing/dashboard', (req, res) => {
     });
 });
 
-// Meta OAuth Routes
-router.get('/marketing/oauth/meta', initiateMetaAuth);
-router.get('/marketing/oauth/meta/callback', handleMetaCallback);
-router.post('/marketing/oauth/meta/disconnect', disconnectMeta);
+// Meta OAuth Initiate & Disconnect
+router.get('/marketing/oauth/meta', verifyToken, authorize(['marketing.manage']), initiateMetaAuth);
+router.post('/marketing/oauth/meta/disconnect', verifyToken, authorize(['marketing.manage']), disconnectMeta);
 
-// Google OAuth Routes
-router.get('/marketing/oauth/google', initiateGoogleAuth);
-router.get('/marketing/oauth/google/callback', handleGoogleCallback);
-router.post('/marketing/oauth/google/disconnect', disconnectGoogle);
+// Google OAuth Initiate & Disconnect
+router.get('/marketing/oauth/google', verifyToken, authorize(['marketing.manage']), initiateGoogleAuth);
+router.post('/marketing/oauth/google/disconnect', verifyToken, authorize(['marketing.manage']), disconnectGoogle);
 
 // Meta Marketing API Routes
-router.get('/marketing/meta/test', metaController.testMetaConnection);
-router.get('/marketing/meta/account', metaController.getAdAccount);
-router.get('/marketing/meta/campaigns', metaController.getCampaigns);
-router.get('/marketing/meta/campaigns/:campaignId/insights', metaController.getCampaignInsights);
-router.get('/marketing/meta/insights', metaController.getAdAccountInsights);
-router.get('/marketing/meta/adsets', metaController.getAdSets);
-router.get('/marketing/meta/ads', metaController.getAds);
-router.post('/marketing/meta/campaigns', metaController.createCampaign);
-router.patch('/marketing/meta/campaigns/:campaignId/status', metaController.updateCampaignStatus);
-router.get('/marketing/meta/audiences', metaController.getCustomAudiences);
+router.get('/marketing/meta/test', verifyToken, authorize(['marketing.view', 'marketing.manage']), metaController.testMetaConnection);
+router.get('/marketing/meta/account', verifyToken, authorize(['marketing.view', 'marketing.manage']), metaController.getAdAccount);
+router.get('/marketing/meta/campaigns', verifyToken, authorize(['marketing.view', 'marketing.manage']), metaController.getCampaigns);
+router.get('/marketing/meta/campaigns/:campaignId/insights', verifyToken, authorize(['marketing.view', 'marketing.manage']), metaController.getCampaignInsights);
+router.get('/marketing/meta/insights', verifyToken, authorize(['marketing.view', 'marketing.manage']), metaController.getAdAccountInsights);
+router.get('/marketing/meta/adsets', verifyToken, authorize(['marketing.view', 'marketing.manage']), metaController.getAdSets);
+router.get('/marketing/meta/ads', verifyToken, authorize(['marketing.view', 'marketing.manage']), metaController.getAds);
+router.post('/marketing/meta/campaigns', verifyToken, authorize(['marketing.manage']), metaController.createCampaign);
+router.patch('/marketing/meta/campaigns/:campaignId/status', verifyToken, authorize(['marketing.manage']), metaController.updateCampaignStatus);
+router.get('/marketing/meta/audiences', verifyToken, authorize(['marketing.view', 'marketing.manage']), metaController.getCustomAudiences);
 
-router.get('/marketing/campaigns', (req, res) => {
+router.get('/marketing/campaigns', verifyToken, authorize(['marketing.view', 'marketing.manage']), (req, res) => {
     res.json({
         success: true,
         message: 'Retrieved campaigns',
@@ -46,7 +48,7 @@ router.get('/marketing/campaigns', (req, res) => {
 });
 
 // WhatsApp Campaign Routes
-router.get('/marketing/whatsapp/customers', getEligibleCustomers);
-router.post('/marketing/whatsapp/send', sendWhatsAppCampaign);
+router.get('/marketing/whatsapp/customers', verifyToken, authorize(['marketing.view', 'marketing.manage']), getEligibleCustomers);
+router.post('/marketing/whatsapp/send', verifyToken, authorize(['marketing.manage']), sendWhatsAppCampaign);
 
 export default router;

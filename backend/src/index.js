@@ -5,6 +5,8 @@ import helmet from 'helmet';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { responseHelper } from './middleware/index.js';
+import { globalLimiter } from './middleware/rateLimiter.js';
+import { xssSanitizer } from './middleware/xssSanitizer.js';
 import userRoutes from './user/routes/index.js';
 import productRoutes from './product/routes/index.js';
 import stockRoutes from './stock/routes/index.js';
@@ -30,69 +32,94 @@ import './product/models/associations.js';
 
 const app = express();
 
-// ---------- Middleware ----------
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
-app.use(express.json({ limit: '10mb' }));
+// Trust reverse proxies (Nginx / Cloudflare / Load Balancers) for correct rate limiting IP
+app.set('trust proxy', 1);
 
-// Debug middleware to check body parsing
-app.use((req, res, next) => {
-  if (req.method === 'POST' && req.path.includes('/login')) {
-    console.log('\n=== BODY PARSING CHECK ===');
-    console.log('Content-Type:', req.headers['content-type']);
-    console.log('Body exists:', !!req.body);
-    console.log('Body keys:', Object.keys(req.body || {}));
-    console.log('Body:', req.body);
-    console.log('==========================\n');
-  }
-  next();
-});
-
-// ---------- CORS ----------
-app.use(cors({
-  origin: true,
-  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "x-branch-id", "Accept"],
-  credentials: true
+// ---------- Security Headers & Content Security Policy (CSP) ----------
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: "cross-origin" },
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      baseUri: ["'self'"],
+      fontSrc: ["'self'", "https:", "data:"],
+      formAction: ["'self'"],
+      frameAncestors: ["'self'"],
+      imgSrc: ["'self'", "data:", "blob:", "https:", "http://localhost:*", "http://127.0.0.1:*"],
+      objectSrc: ["'none'"],
+      scriptSrc: ["'self'"],
+      scriptSrcAttr: ["'none'"],
+      styleSrc: ["'self'", "https:", "'unsafe-inline'"],
+      connectSrc: ["'self'", "http://localhost:*", "http://127.0.0.1:*", "https://api.razorpay.com", "https://*.digitaloceanspaces.com", "https://*.amazonaws.com"],
+      ...(process.env.NODE_ENV === 'production' ? { upgradeInsecureRequests: [] } : {})
+    },
+  },
 }));
 
-// Handle preflight requests
-// app.options("/*", cors());
+// ---------- Middleware & Input Sanitization ----------
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(express.json({ limit: '10mb' }));
+app.use(xssSanitizer);
+app.use(responseHelper);
+
+// ---------- Strict CORS Allowlist ----------
+const allowedOrigins = [
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+  'http://localhost:3000',
+  'http://localhost:5174',
+  ...(process.env.FRONTEND_URL ? [process.env.FRONTEND_URL] : []),
+  ...(process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',').map(s => s.trim()) : [])
+];
+
+app.use(cors({
+  origin: (origin, callback) => {
+    // Allow non-browser requests (e.g., mobile apps, curl, server-to-server) with no origin
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes(origin) || (process.env.NODE_ENV !== 'production' && /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin))) {
+      return callback(null, true);
+    }
+    return callback(new Error(`CORS policy violation: origin ${origin} is not allowed`), false);
+  },
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "x-branch-id", "Accept"],
+  credentials: true,
+  maxAge: 86400 // 24 hours preflight caching
+}));
 
 app.use(morgan('dev'));
 
-// ---------- Static Files ----------
-// Must be BEFORE helmet() — helmet sets Cross-Origin-Resource-Policy: same-origin
-// which blocks cross-origin image loading. We override it here first.
+// ---------- Rate Limiting ----------
+app.use('/api/', globalLimiter);
+
+// ---------- Static Files (Sandboxed to prevent SVG / HTML XSS) ----------
 app.use('/selfies', (req, res, next) => {
   res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
-  res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Cache-Control', 'public, max-age=259200'); // 3 days
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Content-Security-Policy', "default-src 'none'; sandbox");
   next();
 }, express.static(path.join(__dirname, '../../public/selfies')));
 
 // Serve ticket attachments
 app.use('/uploads/tickets', (req, res, next) => {
   res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Content-Security-Policy', "default-src 'none'; sandbox");
   next();
 }, express.static(path.join(__dirname, '../../public/uploads/tickets')));
 
-app.use(helmet());
-app.use(responseHelper);
+// ---------- Health / Test Routes ----------
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
+});
 
-// ---------- Test Routes ----------
 app.get('/', (req, res) => {
   res.status(200).send("Hello World!!");
 });
 
 app.get('/api/data', (req, res) => {
   res.sendSuccess({ value: 42 }, 'Data fetched successfully');
-});
-
-app.get('/api/error', (req, res) => {
-  res.sendError('Something went wrong', 422, [
-    { field: 'email', message: 'Invalid' }
-  ]);
 });
 
 // ---------- Main Routes ----------
@@ -110,13 +137,30 @@ app.use('/api/v1', ticketRoutes);
 
 // ---------- 404 Handler ----------
 app.use((req, res) => {
-  return res.sendError('Route not found', 404);
+  if (typeof res.sendError === 'function') {
+    return res.sendError('Route not found', 404);
+  }
+  return res.status(404).json({ status: 'error', message: 'Route not found' });
 });
 
-// ---------- Global Error Handler ----------
+// ---------- Global Secure Error Handler ----------
 app.use((err, req, res, next) => {
-  console.error("🔥 Global Error:", err.stack);
-  return res.sendError(err.message || 'Internal Server Error', err.status || 500);
+  console.error("🔥 Global Error:", err.stack || err.message || err);
+
+  // Distinguish client/validation errors from 500 server crashes
+  const status = err.status || err.statusCode || (err.message?.includes('CORS policy') ? 403 : 500);
+  const isProd = process.env.NODE_ENV === 'production';
+
+  // In production, mask internal server error details
+  let userMessage = err.message || 'Internal Server Error';
+  if (isProd && status === 500) {
+    userMessage = 'An internal server error occurred. Please contact support.';
+  }
+
+  if (typeof res.sendError === 'function') {
+    return res.sendError(userMessage, status);
+  }
+  return res.status(status).json({ status: 'error', message: userMessage });
 });
 
 export default app;

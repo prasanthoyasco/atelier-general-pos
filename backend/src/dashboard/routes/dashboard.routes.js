@@ -6,8 +6,8 @@ import { authenticateBranch } from "../../middleware/authenticateBranch.js";
 
 const router = express.Router();
 
-// Test route to verify routing is working
-router.get("/test", (req, res) => {
+// Health/test endpoint for dashboard module
+router.get("/test", verifyToken, (req, res) => {
   res.json({ message: "Dashboard routes are working!" });
 });
 

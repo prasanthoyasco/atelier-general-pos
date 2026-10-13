@@ -1,5 +1,7 @@
 import User from "../models/user.model.js";
 import Role from "../models/role.model.js";
+import Branch from "../models/branch.model.js";
+import UserBranch from "../models/userbranch.model.js";
 import "../models/associations.js"; // Import associations
 import bcrypt from "bcrypt";
 import { Op } from "sequelize";
@@ -28,30 +30,51 @@ const userService = {
     return userData;
   },
 
-  // 🔹 Get all active users with pagination
+  // 🔹 Get all active users with pagination and optional branch filter
   async getUsers(params = {}) {
-    const { page = 1, limit = 10, search = '' } = params;
+    const { page = 1, limit = 10, search = '', branch_id } = params;
     const offset = (page - 1) * limit;
 
     const whereClause = { is_active: true };
 
+    // Filter by branch
+    if (branch_id && branch_id !== 'all') {
+      const userBranchRows = await UserBranch.findAll({
+        where: { branch_id, is_active: true },
+        attributes: ['user_id']
+      });
+      const userIds = userBranchRows.map(ub => ub.user_id);
+      whereClause.id = { [Op.in]: userIds };
+    }
+
     // Add search functionality
     if (search) {
-      whereClause[Op.or] = [
+      const searchCondition = [
         { username: { [Op.like]: `%${search}%` } },
         { email: { [Op.like]: `%${search}%` } },
         { phone: { [Op.like]: `%${search}%` } }
       ];
+      whereClause[Op.or] = searchCondition;
     }
 
     const { count, rows } = await User.findAndCountAll({
       where: whereClause,
+      distinct: true,
       attributes: { exclude: ["password", "token"] },
-      include: [{
-        model: Role,
-        as: 'role',
-        attributes: ['id', 'role_name', 'description']
-      }],
+      include: [
+        {
+          model: Role,
+          as: 'role',
+          attributes: ['id', 'role_name', 'description']
+        },
+        {
+          model: Branch,
+          as: 'branches',
+          attributes: ['id', 'branch_name', 'branch_code'],
+          through: { attributes: [] },
+          required: false
+        }
+      ],
       limit: parseInt(limit),
       offset: parseInt(offset),
       order: [['createdAt', 'DESC']]

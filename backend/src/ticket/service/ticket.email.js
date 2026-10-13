@@ -1,4 +1,5 @@
 import nodemailer from 'nodemailer';
+import { escapeHtml } from '../../utils/escapeHtml.js';
 
 // Create transporter lazily so it reads env vars at call time, not module load time
 const getTransporter = () => nodemailer.createTransport({
@@ -30,7 +31,7 @@ export async function sendTicketCreatedEmail(ticket) {
   const to      = process.env.TICKET_NOTIFY_EMAIL;
   const from    = `"DUCH CLOTHING — Ticket System" <${process.env.EMAIL_FROM}>`;
   const pc      = PRIORITY_COLOR[ticket.priority] || '#6366f1';
-  const typeLabel = TYPE_LABEL[ticket.ticket_type] || ticket.ticket_type;
+  const typeLabel = TYPE_LABEL[ticket.ticket_type] || escapeHtml(ticket.ticket_type);
   const now     = new Date(ticket.createdAt).toLocaleString('en-IN', {
     day: '2-digit', month: 'short', year: 'numeric',
     hour: '2-digit', minute: '2-digit', hour12: true,
@@ -39,10 +40,10 @@ export async function sendTicketCreatedEmail(ticket) {
   const attachmentRows = (ticket.attachments || []).map(a => `
     <tr>
       <td style="padding:6px 12px;border-bottom:1px solid #f1f5f9;font-size:12px;color:#475569;">
-        📎 ${a.name || 'Attachment'}
+        📎 ${escapeHtml(a.name || 'Attachment')}
       </td>
       <td style="padding:6px 12px;border-bottom:1px solid #f1f5f9;font-size:11px;color:#94a3b8;">
-        ${a.type || '—'}
+        ${escapeHtml(a.type || '—')}
       </td>
     </tr>
   `).join('');
@@ -67,16 +68,16 @@ export async function sendTicketCreatedEmail(ticket) {
                     <span style="color:#fff;font-size:13px;font-weight:700;letter-spacing:1px;">🎫 NEW TICKET</span>
                   </div>
                   <div style="font-size:24px;font-weight:900;color:#fff;margin-bottom:6px;">
-                    ${ticket.title}
+                    ${escapeHtml(ticket.title)}
                   </div>
                   <div style="font-size:13px;color:rgba(255,255,255,0.55);">
-                    ${ticket.ticket_no} &nbsp;·&nbsp; ${now}
+                    ${escapeHtml(ticket.ticket_no)} &nbsp;·&nbsp; ${now}
                   </div>
                 </td>
                 <td align="right" valign="top">
                   <div style="background:${pc}25;border:1.5px solid ${pc}60;border-radius:20px;padding:6px 16px;display:inline-block;">
                     <span style="color:${pc};font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:1px;">
-                      ${ticket.priority}
+                      ${escapeHtml(ticket.priority)}
                     </span>
                   </div>
                 </td>
@@ -98,8 +99,8 @@ export async function sendTicketCreatedEmail(ticket) {
                 </td>
                 <td style="padding:14px 18px;border-right:1px solid #e2e8f0;width:33%;">
                   <div style="font-size:10px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Raised By</div>
-                  <div style="font-size:13px;font-weight:700;color:#1e293b;">${ticket.raised_by_name || '—'}</div>
-                  <div style="font-size:11px;color:#64748b;">${ticket.raised_by_email || ''}</div>
+                  <div style="font-size:13px;font-weight:700;color:#1e293b;">${escapeHtml(ticket.raised_by_name || '—')}</div>
+                  <div style="font-size:11px;color:#64748b;">${escapeHtml(ticket.raised_by_email || '')}</div>
                 </td>
                 <td style="padding:14px 18px;width:33%;">
                   <div style="font-size:10px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Status</div>
@@ -113,7 +114,7 @@ export async function sendTicketCreatedEmail(ticket) {
             <div style="margin-bottom:20px;">
               <div style="font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px;">Description</div>
               <div style="background:#f8fafc;border-left:3px solid #6366f1;border-radius:0 8px 8px 0;padding:14px 16px;font-size:13px;color:#475569;line-height:1.7;">
-                ${ticket.description.replace(/\n/g, '<br>')}
+                ${escapeHtml(ticket.description).replace(/\n/g, '<br>')}
               </div>
             </div>
             ` : ''}
@@ -186,10 +187,10 @@ export async function sendTicketAssignedEmail(ticket, developerEmail, developerN
   const attachmentRows = (ticket.attachments || []).map(a => `
     <tr>
       <td style="padding:6px 12px;border-bottom:1px solid #f1f5f9;font-size:12px;color:#475569;">
-        📎 ${a.name || 'Attachment'}
+        📎 ${escapeHtml(a.name || 'Attachment')}
       </td>
       <td style="padding:6px 12px;border-bottom:1px solid #f1f5f9;font-size:11px;color:#94a3b8;">
-        ${a.type || '—'}
+        ${escapeHtml(a.type || '—')}
       </td>
     </tr>
   `).join('');
@@ -216,7 +217,7 @@ export async function sendTicketAssignedEmail(ticket, developerEmail, developerN
                     <span style="color:#fff;font-size:13px;font-weight:700;letter-spacing:1px;">🔧 TICKET ASSIGNED TO YOU</span>
                   </div>
                   <div style="font-size:24px;font-weight:900;color:#fff;margin-bottom:6px;">
-                    Hi ${developerName}, you have a new ticket!
+                    Hi ${escapeHtml(developerName)}, you have a new ticket!
                   </div>
                   <div style="font-size:13px;color:rgba(255,255,255,0.55);">
                     Assigned on ${assignedAt}
@@ -225,7 +226,7 @@ export async function sendTicketAssignedEmail(ticket, developerEmail, developerN
                 <td align="right" valign="top">
                   <div style="background:${pc}25;border:1.5px solid ${pc}60;border-radius:20px;padding:6px 16px;display:inline-block;">
                     <span style="color:${pc};font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:1px;">
-                      ${ticket.priority}
+                      ${escapeHtml(ticket.priority)}
                     </span>
                   </div>
                 </td>
@@ -240,8 +241,8 @@ export async function sendTicketAssignedEmail(ticket, developerEmail, developerN
 
             <!-- Ticket ID banner -->
             <div style="background:#f5f3ff;border:1.5px solid #ddd6fe;border-radius:10px;padding:14px 18px;margin:24px 0 20px;display:flex;align-items:center;gap:12px;">
-              <span style="font-size:22px;font-weight:900;color:#7c3aed;">${ticket.ticket_no}</span>
-              <span style="font-size:15px;font-weight:700;color:#1e1b4b;">${ticket.title}</span>
+              <span style="font-size:22px;font-weight:900;color:#7c3aed;">${escapeHtml(ticket.ticket_no)}</span>
+              <span style="font-size:15px;font-weight:700;color:#1e1b4b;">${escapeHtml(ticket.title)}</span>
             </div>
 
             <!-- Info strip -->
@@ -253,7 +254,7 @@ export async function sendTicketAssignedEmail(ticket, developerEmail, developerN
                 </td>
                 <td style="padding:14px 18px;border-right:1px solid #e2e8f0;width:33%;">
                   <div style="font-size:10px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Raised By</div>
-                  <div style="font-size:13px;font-weight:700;color:#1e293b;">${ticket.raised_by_name || '—'}</div>
+                  <div style="font-size:13px;font-weight:700;color:#1e293b;">${escapeHtml(ticket.raised_by_name || '—')}</div>
                 </td>
                 <td style="padding:14px 18px;width:33%;">
                   <div style="font-size:10px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Status</div>
@@ -267,7 +268,7 @@ export async function sendTicketAssignedEmail(ticket, developerEmail, developerN
             <div style="margin-bottom:20px;">
               <div style="font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px;">Description</div>
               <div style="background:#faf5ff;border-left:3px solid #7c3aed;border-radius:0 8px 8px 0;padding:14px 16px;font-size:13px;color:#475569;line-height:1.7;">
-                ${ticket.description.replace(/\n/g, '<br>')}
+                ${escapeHtml(ticket.description).replace(/\n/g, '<br>')}
               </div>
             </div>
             ` : ''}
@@ -277,7 +278,7 @@ export async function sendTicketAssignedEmail(ticket, developerEmail, developerN
             <div style="margin-bottom:20px;">
               <div style="font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px;">Admin Notes for You</div>
               <div style="background:#eff6ff;border-left:3px solid #3b82f6;border-radius:0 8px 8px 0;padding:14px 16px;font-size:13px;color:#1d4ed8;line-height:1.7;">
-                ${ticket.admin_notes.replace(/\n/g, '<br>')}
+                ${escapeHtml(ticket.admin_notes).replace(/\n/g, '<br>')}
               </div>
             </div>
             ` : ''}

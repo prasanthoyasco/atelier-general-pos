@@ -6,9 +6,13 @@ const tableService = {
   },
   
   async getTablesByBranch(branchId) {
-    return await Table.findAll({
+    const tables = await Table.findAll({
       where: { branch_id: branchId, active: true },
-      order: [['table_no', 'ASC']]
+    });
+    return tables.sort((a, b) => {
+      const valA = String(a.table_no || a.table_name || "");
+      const valB = String(b.table_no || b.table_name || "");
+      return valA.localeCompare(valB, undefined, { numeric: true, sensitivity: "base" });
     });
   },
 

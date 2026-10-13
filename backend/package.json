@@ -6,6 +6,8 @@
   "type": "module",
   "scripts": {
     "test": "jest",
+    "test:security": "node scripts/security_test_suite.mjs",
+    "test:xss": "node scripts/xss_security_test_suite.mjs",
     "dev": "nodemon run.js",
     "dev:start": "node run.js",
     "start": "node run.js",

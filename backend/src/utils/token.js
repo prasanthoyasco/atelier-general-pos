@@ -4,28 +4,47 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
+const getJwtSecret = () => {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('FATAL: JWT_SECRET environment variable is missing in production');
+    }
+    console.warn('WARNING: JWT_SECRET is not set in environment.');
+  }
+  return secret || 'dev-fallback-local-only-secret-key-change-in-prod';
+};
 
-const JWT_SECRET = process.env.JWT_SECRET || '3540e43edf1f1ed4811552d2b0d5a9fd1b4b23b8b7f0c48c83c621ed103454a6';
-const REFRESH_SECRET = process.env.REFRESH_SECRET || '7d9f2e4b1c8a3f6e0d5b2a9c4e7f1d3b8a6c2e5f9d1b4a7c0e3f6b9d2e5a8c1';
-const EXPIRES_IN = '2h'; 
-const REFRESH_EXPIRES_IN = '7d'; 
-/*
+const getRefreshSecret = () => {
+  const secret = process.env.REFRESH_SECRET || process.env.JWT_REFRESH_SECRET;
+  if (!secret) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('FATAL: REFRESH_SECRET environment variable is missing in production');
+    }
+    console.warn('WARNING: REFRESH_SECRET is not set in environment.');
+  }
+  return secret || 'dev-fallback-local-refresh-secret-change-in-prod';
+};
+
+const EXPIRES_IN = '2h';
+const REFRESH_EXPIRES_IN = '7d';
+
+/**
  * Generate a JWT token with user payload
  * @param {object} payload - user data to encode in token
  * @returns {string} token
  */
 export const generateToken = (payload) => {
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: EXPIRES_IN });
+  return jwt.sign(payload, getJwtSecret(), { expiresIn: EXPIRES_IN, algorithm: 'HS256' });
 };
 
 export const generateRefreshToken = (payload) => {
-  return jwt.sign(payload, REFRESH_SECRET, { expiresIn: REFRESH_EXPIRES_IN });
+  return jwt.sign(payload, getRefreshSecret(), { expiresIn: REFRESH_EXPIRES_IN, algorithm: 'HS256' });
 };
 
 export const decodeToken = (token) => {
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    return decoded;
+    return jwt.verify(token, getJwtSecret(), { algorithms: ['HS256'] });
   } catch (err) {
     throw new Error("Invalid or expired token");
   }
@@ -33,8 +52,8 @@ export const decodeToken = (token) => {
 
 export const decodeRefreshToken = (token) => {
   try {
-    return jwt.verify(token, REFRESH_SECRET);
+    return jwt.verify(token, getRefreshSecret(), { algorithms: ['HS256'] });
   } catch (err) {
     throw new Error("Invalid or expired refresh token");
   }
-};
+};

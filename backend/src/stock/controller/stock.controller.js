@@ -102,6 +102,19 @@ const stockController = {
     try {
       const stock = await stockService.getStockById(req.params.id);
       if (!stock) return res.status(404).json({ error: "Stock record not found" });
+
+      // Check branch boundary
+      const userRole = (req.user?.role_name || '').toLowerCase().replace(/_/g, ' ');
+      const isSuperAdminOrAdmin = userRole === 'super admin' || userRole === 'admin';
+      if (!isSuperAdminOrAdmin && req.branchContext) {
+        const allowedBranchIds = req.branchContext.multipleBranches
+          ? (req.branchContext.branches || []).map(b => b.branchId)
+          : [req.branchContext.branchId];
+        if (stock.branch_id && !allowedBranchIds.includes(stock.branch_id)) {
+          return res.status(403).json({ error: "Access denied: stock belongs to a different branch" });
+        }
+      }
+
       return res.json(stock);
     } catch (err) {
       return res.status(500).json({ error: err.message });
@@ -111,6 +124,21 @@ const stockController = {
   // ✅ Update Stock
   async update(req, res) {
     try {
+      const existing = await stockService.getStockById(req.params.id);
+      if (!existing) return res.status(404).json({ error: "Stock record not found" });
+
+      // Check branch boundary
+      const userRole = (req.user?.role_name || '').toLowerCase().replace(/_/g, ' ');
+      const isSuperAdminOrAdmin = userRole === 'super admin' || userRole === 'admin';
+      if (!isSuperAdminOrAdmin && req.branchContext) {
+        const allowedBranchIds = req.branchContext.multipleBranches
+          ? (req.branchContext.branches || []).map(b => b.branchId)
+          : [req.branchContext.branchId];
+        if (existing.branch_id && !allowedBranchIds.includes(existing.branch_id)) {
+          return res.status(403).json({ error: "Access denied: cannot modify stock from a different branch" });
+        }
+      }
+
       const validatedData = updateStockSchema.parse(req.body);
 
       // Attach updater info from token
@@ -121,8 +149,6 @@ const stockController = {
       }
 
       const stock = await stockService.updateStock(req.params.id, validatedData);
-      if (!stock) return res.status(404).json({ error: "Stock record not found" });
-
       return res.json(stock);
     } catch (err) {
       return res.status(400).json({
@@ -136,6 +162,18 @@ const stockController = {
     try {
       const stock = await stockService.getStockById(req.params.id);
       if (!stock) return res.status(404).json({ error: "Stock record not found" });
+
+      // Check branch boundary
+      const userRole = (req.user?.role_name || '').toLowerCase().replace(/_/g, ' ');
+      const isSuperAdminOrAdmin = userRole === 'super admin' || userRole === 'admin';
+      if (!isSuperAdminOrAdmin && req.branchContext) {
+        const allowedBranchIds = req.branchContext.multipleBranches
+          ? (req.branchContext.branches || []).map(b => b.branchId)
+          : [req.branchContext.branchId];
+        if (stock.branch_id && !allowedBranchIds.includes(stock.branch_id)) {
+          return res.status(403).json({ error: "Access denied: cannot delete stock from a different branch" });
+        }
+      }
 
       // Soft delete: mark as inactive
       const updateData = {

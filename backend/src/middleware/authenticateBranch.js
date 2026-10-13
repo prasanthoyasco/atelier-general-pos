@@ -9,15 +9,21 @@ import Role from '../user/models/role.model.js';
  * 
  * @param {boolean} allowMultipleBranches - If true, allows requests without branch_id for users with multiple branches
  */
-export const authenticateBranch = (allowMultipleBranches = false) => async (req, res, next) => {
-    try {
-        const userId = req.user?.id;
-        // Handle null prototype objects from query params
-        const queryBranchId = req.query && req.query.branch_id ? req.query.branch_id : null;
-        const bodyBranchId = req.body && req.body.branch_id ? req.body.branch_id : null;
-        const paramsBranchId = req.params && req.params.branch_id ? req.params.branch_id : null;
-        
-        let branchId = bodyBranchId || queryBranchId || paramsBranchId;
+export const authenticateBranch = (options = false) => {
+    const allowMultipleBranches = (typeof options === 'object' && options !== null)
+        ? Boolean(options.allowMultipleBranches)
+        : Boolean(options);
+
+    return async (req, res, next) => {
+        try {
+            const userId = req.user?.id;
+            // Handle branch_id from header, query, body, or params
+            const headerBranchId = req.headers && req.headers['x-branch-id'] ? req.headers['x-branch-id'] : null;
+            const queryBranchId = req.query && req.query.branch_id ? req.query.branch_id : null;
+            const bodyBranchId = req.body && req.body.branch_id ? req.body.branch_id : null;
+            const paramsBranchId = req.params && req.params.branch_id ? req.params.branch_id : null;
+            
+            let branchId = headerBranchId || bodyBranchId || queryBranchId || paramsBranchId;
 
         if (!userId) {
             return res.status(401).json({ 
@@ -181,6 +187,7 @@ export const authenticateBranch = (allowMultipleBranches = false) => async (req,
             error: error.message 
         });
     }
+  };
 };
 
 /**

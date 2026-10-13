@@ -1,6 +1,14 @@
 import { Sequelize } from "sequelize";
-//mysql://dutch:DutchDB123@167.71.229.209:3306/duch
-const sequelize = new Sequelize("mysql://root:Head2ToePhy@168.144.158.134/annaporani", {
+import dotenv from "dotenv";
+
+dotenv.config();
+
+const dbUrl = process.env.DATABASE_URL;
+if (!dbUrl) {
+  console.error("FATAL: DATABASE_URL environment variable is missing. Database connection cannot be established.");
+}
+
+const sequelize = new Sequelize(dbUrl || "mysql://localhost:3306/general_pos", {
   dialect: "mysql",
   pool: {
     max: 10,
@@ -12,35 +20,10 @@ const sequelize = new Sequelize("mysql://root:Head2ToePhy@168.144.158.134/annapo
     connectTimeout: 30000,
   },
   logging: false,
-});  // for Development
-// const sequelize = new Sequelize("mysql://dutch:DutchDB123@localhost:3306/dutch"); // for deployment
+});
 
 sequelize.authenticate()
   .then(() => console.log("Database is Connected"))
   .catch((err) => console.warn(`DB connection warning: ${err.message}`));
 
-
 export { sequelize };
-
-
-
-
-// import { Sequelize } from "sequelize";
-
-// const sequelize = new Sequelize("hms", "ramya", "ramya", {
-//   host: "192.168.1.150",
-//   port: 3306,
-//   dialect: "mysql",
-// });
-
-// sequelize
-//   .authenticate()
-//   .then(() => console.log("Database is Connected"))
-//   .catch((err) => console.error(`Database connection error: ${err}`));
-
-
-// export { sequelize };
-
-
-
-

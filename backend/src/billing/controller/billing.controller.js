@@ -76,6 +76,19 @@ const billingController = {
       if (!billing) {
         return res.status(404).json({ error: "Billing not found" });
       }
+
+      // Check branch boundary: verify user has access to this bill's branch
+      const userRole = (req.user?.role_name || '').toLowerCase().replace(/_/g, ' ');
+      const isSuperAdminOrAdmin = userRole === 'super admin' || userRole === 'admin';
+      if (!isSuperAdminOrAdmin && req.branchContext) {
+        const allowedBranchIds = req.branchContext.multipleBranches
+          ? (req.branchContext.branches || []).map(b => b.branchId)
+          : [req.branchContext.branchId];
+        if (billing.branch_id && !allowedBranchIds.includes(billing.branch_id)) {
+          return res.status(403).json({ error: "Access denied: bill belongs to a different branch" });
+        }
+      }
+
       return res.json(billing);
     } catch (err) {
       return res.status(500).json({ error: err.message });
@@ -85,6 +98,23 @@ const billingController = {
   // ✅ Update Billing (and items if provided)
   async update(req, res) {
     try {
+      const existing = await billingService.getBillingById(req.params.id);
+      if (!existing) {
+        return res.status(404).json({ error: "Billing not found" });
+      }
+
+      // Enforce branch boundary
+      const userRole = (req.user?.role_name || '').toLowerCase().replace(/_/g, ' ');
+      const isSuperAdminOrAdmin = userRole === 'super admin' || userRole === 'admin';
+      if (!isSuperAdminOrAdmin && req.branchContext) {
+        const allowedBranchIds = req.branchContext.multipleBranches
+          ? (req.branchContext.branches || []).map(b => b.branchId)
+          : [req.branchContext.branchId];
+        if (existing.branch_id && !allowedBranchIds.includes(existing.branch_id)) {
+          return res.status(403).json({ error: "Access denied: cannot modify bill from a different branch" });
+        }
+      }
+
       const data = req.body;
 
       // Attach updater info
@@ -99,10 +129,6 @@ const billingController = {
         data
       );
 
-      if (!billing) {
-        return res.status(404).json({ error: "Billing not found" });
-      }
-
       return res.json({
         message: "Billing updated successfully",
         data: billing,
@@ -115,9 +141,21 @@ const billingController = {
   // ✅ Delete Billing (soft delete billing + items)
   async delete(req, res) {
     try {
-      const billing = await billingService.getBillingById(req.params.id);
-      if (!billing) {
+      const existing = await billingService.getBillingById(req.params.id);
+      if (!existing) {
         return res.status(404).json({ error: "Billing not found" });
+      }
+
+      // Enforce branch boundary
+      const userRole = (req.user?.role_name || '').toLowerCase().replace(/_/g, ' ');
+      const isSuperAdminOrAdmin = userRole === 'super admin' || userRole === 'admin';
+      if (!isSuperAdminOrAdmin && req.branchContext) {
+        const allowedBranchIds = req.branchContext.multipleBranches
+          ? (req.branchContext.branches || []).map(b => b.branchId)
+          : [req.branchContext.branchId];
+        if (existing.branch_id && !allowedBranchIds.includes(existing.branch_id)) {
+          return res.status(403).json({ error: "Access denied: cannot delete bill from a different branch" });
+        }
       }
 
       const result = await billingService.deleteBillingWithItems(
