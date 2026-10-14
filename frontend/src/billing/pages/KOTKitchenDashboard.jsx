@@ -4,7 +4,7 @@ import {
   Volume2, VolumeX, Maximize, Minimize, RefreshCw, ChefHat, Calendar,
   CheckCircle, Play, Ban, Armchair, Sparkles, Heart
 } from "lucide-react";
-import { message, Modal, Input, Select } from "antd";
+import { message, Modal, Input, Select, Tag } from "antd";
 import billingService from "../service/billingService.js";
 import productService from "../../Product/services/productService.js";
 import { useBranch } from "../../context/BranchContext.jsx";
@@ -57,6 +57,7 @@ export default function KOTKitchenDashboard() {
   const [tickets, setTickets] = useState([]);
   const [loading, setLoading] = useState(false);
   const [actionLoadingId, setActionLoadingId] = useState(null);
+  const [itemActionLoadingId, setItemActionLoadingId] = useState(null);
 
   // Sync / Polling status
   const [secondsSinceSync, setSecondsSinceSync] = useState(0);
@@ -256,7 +257,12 @@ export default function KOTKitchenDashboard() {
             playNewOrderNotification();
           }
           fetchQueue(false);
-        } else if (eventType === "KOT_SERVED" || eventType === "KOT_STATUS_UPDATED") {
+        } else if (
+          eventType === "KOT_SERVED" ||
+          eventType === "KOT_STATUS_UPDATED" ||
+          eventType === "KOT_ITEM_STATUS_UPDATED" ||
+          eventType === "KOT_ITEM_SERVED"
+        ) {
           fetchQueue(false);
         }
       };
@@ -334,6 +340,96 @@ export default function KOTKitchenDashboard() {
     }
   };
 
+  // Individual item status transition (e.g. marking 1 item ready while another continues cooking)
+  const handleItemStatusTransition = async (ticketId, itemId, nextStatus) => {
+    if (!itemId || itemActionLoadingId === itemId) return;
+    setItemActionLoadingId(itemId);
+
+    const previousSnapshot = [...tickets];
+
+    // Optimistically update ticket and item in state
+    setTickets((prev) =>
+      prev
+        .map((t) => {
+          if (t.id !== ticketId) return t;
+          const updatedItems = (t.items || []).map((it) => {
+            if (it.kot_item_id === itemId || it.id === itemId) {
+              const totalQty = it.quantity || 1;
+              const isServed = nextStatus === "served";
+              return {
+                ...it,
+                status: nextStatus,
+                served_quantity: isServed ? totalQty : it.served_quantity,
+                is_served: isServed,
+              };
+            }
+            return it;
+          });
+
+          // Compute new ticket kot_status
+          const activeItems = updatedItems.filter((i) => i.status !== "cancelled");
+          let newKotStatus = t.kot_status;
+          if (activeItems.length > 0) {
+            const allServed = activeItems.every((i) => i.is_served || i.status === "served");
+            const anyServed = activeItems.some((i) => (i.served_quantity > 0) || i.status === "served" || i.status === "partially_served");
+            const allReady = activeItems.every((i) => i.status === "ready" || i.status === "served");
+            const anyReady = activeItems.some((i) => i.status === "ready" || i.status === "partially_ready");
+            const anyCooking = activeItems.some((i) => i.status === "preparing");
+
+            if (allServed) newKotStatus = "served";
+            else if (anyServed) newKotStatus = "partially_served";
+            else if (allReady) newKotStatus = "ready";
+            else if (anyReady) newKotStatus = "partially_ready";
+            else if (anyCooking) newKotStatus = "preparing";
+            else newKotStatus = "pending";
+          }
+
+          return {
+            ...t,
+            items: updatedItems,
+            kot_status: newKotStatus,
+            status: newKotStatus,
+          };
+        })
+        .filter((t) => (nextStatus === "served" && t.items?.every((i) => i.is_served) ? false : true))
+    );
+
+    try {
+      const ticketObj = tickets.find((t) => t.id === ticketId);
+      const itemObj = ticketObj?.items?.find((i) => i.kot_item_id === itemId || i.id === itemId);
+
+      const res = await billingService.updateKOTItemStatus(itemId, nextStatus);
+
+      // Instant cross-device broadcast
+      broadcastKOTEvent("KOT_ITEM_STATUS_UPDATED", {
+        ticket_id: ticketId,
+        kot_item_id: itemId,
+        status: nextStatus,
+        product_name: itemObj?.product_name || "Item",
+        kitchen_name: ticketObj?.kitchen_name || "Main Kitchen",
+        table_no: ticketObj?.table_no || "Table",
+        kot_number: ticketObj?.kot_number,
+        kot_status: res?.data?.kot_status,
+      });
+
+      broadcastKOTEvent("KOT_STATUS_UPDATED", {
+        id: ticketId,
+        status: res?.data?.kot_status || nextStatus,
+        table_no: ticketObj?.table_no,
+        kot_number: ticketObj?.kot_number,
+      });
+
+      message.success(`${itemObj?.product_name || "Item"} updated to ${nextStatus}`);
+      fetchQueue(false);
+    } catch (err) {
+      console.error("Item transition failed:", err);
+      setTickets(previousSnapshot);
+      message.error(err?.response?.data?.error || err?.message || "Failed to update item status");
+    } finally {
+      setItemActionLoadingId(null);
+    }
+  };
+
   // Cancellation
   const openCancelModal = (id) => {
     setCancelTargetId(id);
@@ -372,10 +468,16 @@ export default function KOTKitchenDashboard() {
     };
   };
 
-  // Categorize tickets
+  // Categorize tickets with partial orders support
   const pendingTickets = filteredTickets.filter((t) => t.kot_status === "pending");
-  const preparingTickets = filteredTickets.filter((t) => t.kot_status === "preparing");
-  const readyTickets = filteredTickets.filter((t) => t.kot_status === "ready");
+  const preparingTickets = filteredTickets.filter(
+    (t) => t.kot_status === "preparing" || t.kot_status === "partially_ready"
+  );
+  const readyTickets = filteredTickets.filter(
+    (t) =>
+      t.kot_status === "ready" ||
+      (t.kot_status === "partially_served" && t.items?.some((i) => i.status === "ready" && !i.is_served))
+  );
 
   return (
     <div className="min-h-screen w-full bg-[#F4F6F9] flex flex-col font-sans select-none overflow-x-hidden">
@@ -644,22 +746,70 @@ export default function KOTKitchenDashboard() {
                         </span>
                       </div>
 
-                      {/* Items Row */}
+                      {/* Items Row with line-by-line preparation & ready status */}
                       <div className="space-y-2 pt-1 border-t border-slate-100">
-                        {order.items?.map((item, idx) => (
-                          <div key={idx} className="flex items-center gap-3">
-                            <div className="w-9 h-9 md:w-10 md:h-10 rounded-full overflow-hidden border border-slate-100 shrink-0 bg-slate-50 flex items-center justify-center">
-                              <FoodThumbnail
-                                src={item.image_url}
-                                alt={item.product_name}
-                                fallbackSize="sm"
-                              />
+                        {order.items?.map((item, idx) => {
+                          const isLineReady = item.status === "ready";
+                          const isLineServed = item.is_served || item.status === "served";
+                          const isLinePartiallyServed = item.status === "partially_served";
+                          const isItemActionLoading = itemActionLoadingId === item.kot_item_id;
+
+                          return (
+                            <div
+                              key={item.kot_item_id || idx}
+                              className="flex items-center justify-between gap-2 p-1.5 rounded-xl bg-slate-50 border border-slate-100"
+                            >
+                              <div className="flex items-center gap-2.5 min-w-0">
+                                <div className="w-8 h-8 md:w-9 md:h-9 rounded-full overflow-hidden border border-slate-100 shrink-0 bg-white flex items-center justify-center">
+                                  <FoodThumbnail
+                                    src={item.image_url}
+                                    alt={item.product_name}
+                                    fallbackSize="sm"
+                                  />
+                                </div>
+                                <div className="min-w-0">
+                                  <span className="text-xs md:text-sm font-bold text-slate-800 block truncate">
+                                    {item.quantity} × {item.product_name}
+                                  </span>
+                                  {item.served_quantity > 0 && (
+                                    <span className="text-[10px] font-semibold text-blue-600 block">
+                                      {item.served_quantity}/{item.quantity} served
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+
+                              <div className="shrink-0 flex items-center gap-1.5">
+                                {isLineServed ? (
+                                  <Tag color="default" className="font-bold text-[10px] m-0 rounded-md">
+                                    ✓ Served
+                                  </Tag>
+                                ) : isLineReady ? (
+                                  <Tag color="success" className="font-bold text-[10px] m-0 rounded-md">
+                                    ✓ Ready
+                                  </Tag>
+                                ) : isLinePartiallyServed ? (
+                                  <button
+                                    onClick={() => handleItemStatusTransition(order.id, item.kot_item_id, "ready")}
+                                    disabled={isItemActionLoading}
+                                    className="px-2 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-[10px] font-bold cursor-pointer transition disabled:opacity-50"
+                                  >
+                                    Mark Ready
+                                  </button>
+                                ) : (
+                                  <button
+                                    onClick={() => handleItemStatusTransition(order.id, item.kot_item_id, "ready")}
+                                    disabled={isItemActionLoading}
+                                    className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white rounded-lg text-[11px] font-bold flex items-center gap-1 cursor-pointer transition shadow-2xs disabled:opacity-50"
+                                  >
+                                    <Check size={11} strokeWidth={3} />
+                                    <span>Ready</span>
+                                  </button>
+                                )}
+                              </div>
                             </div>
-                            <span className="text-xs md:text-sm font-bold text-slate-800 truncate">
-                              {item.quantity} × {item.product_name}
-                            </span>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
 
                       {/* Primary Action: Mark Ready (56px) */}
@@ -742,21 +892,56 @@ export default function KOTKitchenDashboard() {
                       </div>
 
                       {/* Items Row */}
+                      {/* Items Row with line-by-line pickup status */}
                       <div className="space-y-2 pt-1 border-t border-slate-100">
-                        {order.items?.map((item, idx) => (
-                          <div key={idx} className="flex items-center gap-3">
-                            <div className="w-9 h-9 md:w-10 md:h-10 rounded-full overflow-hidden border border-slate-100 shrink-0 bg-slate-50 flex items-center justify-center">
-                              <FoodThumbnail
-                                src={item.image_url}
-                                alt={item.product_name}
-                                fallbackSize="sm"
-                              />
+                        {order.items?.map((item, idx) => {
+                          const isLineServed = item.is_served || item.status === "served";
+                          const isItemActionLoading = itemActionLoadingId === item.kot_item_id;
+
+                          return (
+                            <div
+                              key={item.kot_item_id || idx}
+                              className="flex items-center justify-between gap-2 p-1.5 rounded-xl bg-slate-50 border border-slate-100"
+                            >
+                              <div className="flex items-center gap-2.5 min-w-0">
+                                <div className="w-8 h-8 md:w-9 md:h-9 rounded-full overflow-hidden border border-slate-100 shrink-0 bg-white flex items-center justify-center">
+                                  <FoodThumbnail
+                                    src={item.image_url}
+                                    alt={item.product_name}
+                                    fallbackSize="sm"
+                                  />
+                                </div>
+                                <div className="min-w-0">
+                                  <span className="text-xs md:text-sm font-bold text-slate-800 block truncate">
+                                    {item.quantity} × {item.product_name}
+                                  </span>
+                                  {item.served_quantity > 0 && (
+                                    <span className="text-[10px] font-semibold text-emerald-700 block">
+                                      {item.served_quantity}/{item.quantity} served
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+
+                              <div className="shrink-0 flex items-center gap-1.5">
+                                {isLineServed ? (
+                                  <Tag color="default" className="font-bold text-[10px] m-0 rounded-md">
+                                    ✓ Served
+                                  </Tag>
+                                ) : (
+                                  <button
+                                    onClick={() => handleItemStatusTransition(order.id, item.kot_item_id, "served")}
+                                    disabled={isItemActionLoading}
+                                    className="px-2.5 py-1 bg-[#059669] hover:bg-emerald-700 active:scale-95 text-white rounded-lg text-[11px] font-bold flex items-center gap-1 cursor-pointer transition shadow-2xs disabled:opacity-50"
+                                  >
+                                    <Check size={11} strokeWidth={3} />
+                                    <span>Served</span>
+                                  </button>
+                                )}
+                              </div>
                             </div>
-                            <span className="text-xs md:text-sm font-bold text-slate-800 truncate">
-                              {item.quantity} × {item.product_name}
-                            </span>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
 
                       {/* Primary Action: Served (56px) */}
@@ -911,16 +1096,39 @@ export default function KOTKitchenDashboard() {
                       </div>
 
                       <div className="space-y-2 pt-1 border-t border-slate-100">
-                        {order.items?.map((item, idx) => (
-                          <div key={idx} className="flex items-center gap-2.5">
-                            <div className="w-8 h-8 rounded-full overflow-hidden border border-slate-100 shrink-0 bg-slate-50 flex items-center justify-center">
-                              <FoodThumbnail src={item.image_url} alt={item.product_name} fallbackSize="sm" />
+                        {order.items?.map((item, idx) => {
+                          const isLineReady = item.status === "ready";
+                          const isLineServed = item.is_served || item.status === "served";
+                          const isItemActionLoading = itemActionLoadingId === item.kot_item_id;
+
+                          return (
+                            <div key={item.kot_item_id || idx} className="flex items-center justify-between gap-2 p-1.5 rounded-lg bg-slate-50 border border-slate-100">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <div className="w-7 h-7 rounded-full overflow-hidden border border-slate-100 shrink-0 bg-white flex items-center justify-center">
+                                  <FoodThumbnail src={item.image_url} alt={item.product_name} fallbackSize="sm" />
+                                </div>
+                                <span className="text-xs font-bold text-slate-800 truncate">
+                                  {item.quantity} × {item.product_name}
+                                </span>
+                              </div>
+                              <div className="shrink-0">
+                                {isLineServed ? (
+                                  <Tag color="default" className="font-bold text-[10px] m-0 rounded">✓ Served</Tag>
+                                ) : isLineReady ? (
+                                  <Tag color="success" className="font-bold text-[10px] m-0 rounded">✓ Ready</Tag>
+                                ) : (
+                                  <button
+                                    onClick={() => handleItemStatusTransition(order.id, item.kot_item_id, "ready")}
+                                    disabled={isItemActionLoading}
+                                    className="px-2 py-0.5 bg-emerald-600 text-white rounded text-[10px] font-bold"
+                                  >
+                                    Ready
+                                  </button>
+                                )}
+                              </div>
                             </div>
-                            <span className="text-xs font-bold text-slate-800">
-                              {item.quantity} × {item.product_name}
-                            </span>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
 
                       <button
@@ -974,16 +1182,36 @@ export default function KOTKitchenDashboard() {
                       </div>
 
                       <div className="space-y-2 pt-1 border-t border-slate-100">
-                        {order.items?.map((item, idx) => (
-                          <div key={idx} className="flex items-center gap-2.5">
-                            <div className="w-8 h-8 rounded-full overflow-hidden border border-slate-100 shrink-0 bg-slate-50 flex items-center justify-center">
-                              <FoodThumbnail src={item.image_url} alt={item.product_name} fallbackSize="sm" />
+                        {order.items?.map((item, idx) => {
+                          const isLineServed = item.is_served || item.status === "served";
+                          const isItemActionLoading = itemActionLoadingId === item.kot_item_id;
+
+                          return (
+                            <div key={item.kot_item_id || idx} className="flex items-center justify-between gap-2 p-1.5 rounded-lg bg-slate-50 border border-slate-100">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <div className="w-7 h-7 rounded-full overflow-hidden border border-slate-100 shrink-0 bg-white flex items-center justify-center">
+                                  <FoodThumbnail src={item.image_url} alt={item.product_name} fallbackSize="sm" />
+                                </div>
+                                <span className="text-xs font-bold text-slate-800 truncate">
+                                  {item.quantity} × {item.product_name}
+                                </span>
+                              </div>
+                              <div className="shrink-0">
+                                {isLineServed ? (
+                                  <Tag color="default" className="font-bold text-[10px] m-0 rounded">✓ Served</Tag>
+                                ) : (
+                                  <button
+                                    onClick={() => handleItemStatusTransition(order.id, item.kot_item_id, "served")}
+                                    disabled={isItemActionLoading}
+                                    className="px-2 py-0.5 bg-[#059669] text-white rounded text-[10px] font-bold"
+                                  >
+                                    Served
+                                  </button>
+                                )}
+                              </div>
                             </div>
-                            <span className="text-xs font-bold text-slate-800">
-                              {item.quantity} × {item.product_name}
-                            </span>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
 
                       <button

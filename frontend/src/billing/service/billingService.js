@@ -97,6 +97,31 @@ const billingService = {
     const res = await api.patch(`/billing/billing/${id}/kot-status`, payload, { params: queryParams });
     return res.data;
   },
+
+  async serveKOTItem(itemId, servedQty = null, customBranchId = null) {
+    const branchId = customBranchId || getBranchId();
+    const payload = {};
+    if (servedQty !== null && servedQty !== undefined) {
+      payload.served_quantity = servedQty;
+    }
+    if (branchId) {
+      payload.branch_id = branchId;
+    }
+    const queryParams = branchId ? { branch_id: branchId } : {};
+    const res = await api.patch(`/billing/billing/kot-items/${itemId}/serve`, payload, { params: queryParams });
+    return res.data;
+  },
+
+  async updateKOTItemStatus(itemId, status, customBranchId = null) {
+    const branchId = customBranchId || getBranchId();
+    const payload = { status };
+    if (branchId) {
+      payload.branch_id = branchId;
+    }
+    const queryParams = branchId ? { branch_id: branchId } : {};
+    const res = await api.patch(`/billing/billing/kot-items/${itemId}/status`, payload, { params: queryParams });
+    return res.data;
+  },
 };
 
 export default billingService;

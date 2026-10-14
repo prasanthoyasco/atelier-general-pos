@@ -137,8 +137,8 @@ const Login = () => {
         const userRole = (user.role?.role_name || user.role_name || '').toLowerCase();
         if (userRole === 'kitchen') {
           navigate("/billing/kitchen");
-        } else if (userRole === 'order taker') {
-          navigate("/billing/pos");
+        } else if (userRole === 'order taker' || userRole === 'waiter') {
+          navigate("/billing/waiter");
         } else {
           navigate("/dashboard");
         }
@@ -146,8 +146,11 @@ const Login = () => {
         throw new Error("Invalid login response");
       }
     } catch (error) {
+      const respData = error.response?.data;
       const errorMessage =
-        error.response?.data?.message ||
+        respData?.message ||
+        respData?.error ||
+        (typeof respData === "string" ? respData : null) ||
         error.message ||
         "Login failed!";
       setLoginError(errorMessage);

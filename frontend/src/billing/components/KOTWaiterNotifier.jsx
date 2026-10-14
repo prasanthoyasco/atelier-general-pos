@@ -66,8 +66,12 @@ export default function KOTWaiterNotifier() {
         return;
       }
 
-      // 2. KOT Served: dismiss active popup
-      if (eventType === "KOT_SERVED" || (eventType === "KOT_STATUS_UPDATED" && newStatus === "served")) {
+      // 2. KOT / Item Served: dismiss active popup
+      if (
+        eventType === "KOT_SERVED" ||
+        eventType === "KOT_ITEM_SERVED" ||
+        (eventType === "KOT_STATUS_UPDATED" && newStatus === "served")
+      ) {
         if (ticketId) {
           notification.destroy(ticketId);
           activeNotificationsRef.current.delete(ticketId);
@@ -75,27 +79,89 @@ export default function KOTWaiterNotifier() {
         return;
       }
 
-      // 3. KOT Ready to Serve: notify waiter/order taker user
-      if (eventType === "KOT_STATUS_UPDATED" && newStatus === "ready") {
+      // 3. Individual Item Ready for Pickup: notify waiter/order taker
+      if (eventType === "KOT_ITEM_STATUS_UPDATED" && newStatus === "ready") {
+        if (isWaiter) {
+          playNotificationSound();
+
+          const prodName = payload.product_name || "Food Item";
+          const kitchenName = payload.kitchen_name || "Kitchen";
+          const tableLabel = payload.table_no || "Table";
+          const itemId = payload.kot_item_id || payload.item_id;
+
+          notification.success({
+            message: (
+              <span className="font-bold text-emerald-800 flex items-center gap-1.5">
+                <UtensilsCrossed size={16} className="text-emerald-600" />
+                Item Ready at {kitchenName}!
+              </span>
+            ),
+            description: (
+              <div className="space-y-1 text-xs">
+                <p className="font-black text-slate-800">
+                  {prodName} • {tableLabel}
+                </p>
+                <p className="text-slate-600">
+                  Ready at <strong>{kitchenName}</strong> pass. Please pick up and serve.
+                </p>
+              </div>
+            ),
+            btn: itemId ? (
+              <button
+                onClick={async () => {
+                  try {
+                    notification.destroy(itemId);
+                    activeNotificationsRef.current.delete(itemId);
+                    const branchId = selectedBranch?.id !== "all" ? selectedBranch?.id : null;
+                    await billingService.serveKOTItem(itemId, null, branchId);
+                    broadcastKOTEvent("KOT_ITEM_SERVED", { kot_item_id: itemId });
+                    broadcastKOTEvent("KOT_STATUS_UPDATED", { kot_item_id: itemId });
+                  } catch (err) {
+                    console.error("Failed to mark item served:", err);
+                  }
+                }}
+                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] !text-white rounded-lg text-xs font-bold shadow-xs cursor-pointer"
+              >
+                Mark Item Served
+              </button>
+            ) : null,
+            key: itemId || `item-ready-${Date.now()}`,
+            duration: 15,
+            placement: "topRight",
+          });
+
+          if (itemId) {
+            activeNotificationsRef.current.add(itemId);
+          }
+        }
+        return;
+      }
+
+      // 4. Full or Partial KOT Ready to Serve: notify waiter/order taker user
+      if (eventType === "KOT_STATUS_UPDATED" && (newStatus === "ready" || newStatus === "partially_ready")) {
         if (isWaiter) {
           // Play sound
           playNotificationSound();
 
           const kotLabel = payload.kot_number ? `KOT #${payload.kot_number}` : (payload.billing_no || "KOT Order");
           const tableLabel = payload.table_no || "Table";
-          const count = payload.items_count || 1;
+          const isPartial = newStatus === "partially_ready";
 
           notification.success({
             message: (
               <span className="font-bold text-emerald-800 flex items-center gap-1.5">
                 <UtensilsCrossed size={16} className="text-emerald-600" />
-                Order Ready to Serve!
+                {isPartial ? "Order Partially Ready!" : "Order Ready to Serve!"}
               </span>
             ),
             description: (
               <div className="space-y-1 text-xs">
                 <p className="font-black text-slate-800">{kotLabel} • {tableLabel}</p>
-                <p className="text-slate-600">Chef marked order ready. Please pick up from kitchen pass.</p>
+                <p className="text-slate-600">
+                  {isPartial
+                    ? "Some items are cooked and waiting at kitchen pass."
+                    : "All items are cooked and ready to serve to customer."}
+                </p>
               </div>
             ),
             btn: ticketId ? (

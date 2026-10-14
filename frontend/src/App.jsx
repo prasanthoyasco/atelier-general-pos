@@ -20,11 +20,13 @@ import {
   Ticket,
   Utensils,
   MonitorSmartphone,
-  List
+  List,
+  UtensilsCrossed
 } from "lucide-react";
 import CustomerBillCopy from "./billing/pages/CustomerBillCopy";
 import CustomerBillForm from "./billing/pages/CustomerBillingForm";
 import POSPage from "./billing/pages/POSPage";
+import WaiterPage from "./billing/pages/WaiterPage";
 import KOTKitchenDashboard from "./billing/pages/KOTKitchenDashboard";
 import Login from "./login/Login";
 import EmployeeLogin from "./login/EmployeeLogin";
@@ -152,18 +154,18 @@ function AppInner() {
       ];
     }
 
-    if (userRoleName === 'order taker') {
+    if (userRoleName === 'order taker' || userRoleName === 'waiter') {
       return [
+        {
+          key: "/billing/waiter",
+          label: "Waiter Service",
+          icon: <UtensilsCrossed size={20} />,
+          children: null
+        },
         {
           key: "/billing/pos",
           label: "POS Terminal",
           icon: <MonitorSmartphone size={20} />,
-          children: null
-        },
-        {
-          key: "/billing/list",
-          label: "Billing List",
-          icon: <List size={20} />,
           children: null
         }
       ];
@@ -245,7 +247,7 @@ function AppInner() {
 
   const getDefaultRedirect = () => {
     if (userRoleName === 'kitchen') return "/billing/kitchen";
-    if (userRoleName === 'order taker') return "/billing/pos";
+    if (userRoleName === 'order taker' || userRoleName === 'waiter') return "/billing/waiter";
     const filteredModules = modules.filter((mod) => mod.name !== "dashboard");
     return filteredModules.length > 0
       ? `/${filteredModules[0].name}/pages/dashboard`
@@ -307,6 +309,14 @@ function AppInner() {
         element={
           <ProtectedRoute>
             <POSPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/billing/waiter"
+        element={
+          <ProtectedRoute allowedRoles={['order taker', 'waiter', 'cashier', 'admin', 'super admin']}>
+            <WaiterPage />
           </ProtectedRoute>
         }
       />

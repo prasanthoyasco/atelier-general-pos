@@ -7,8 +7,9 @@ import SalesReport from "./pages/SalesReport";
 import SourceWiseReport from "./pages/SourceWiseReport";
 import CustomerAnalytics from "./pages/CustomerAnalytics";
 import POSPage from "./pages/POSPage";
+import WaiterPage from "./pages/WaiterPage";
 import DailyInventory from "../stock/pages/DailyInventory";
-import { List, PlusCircle, UserPlus, BarChart, ShoppingCart, MonitorSmartphone, Utensils, Users, ClipboardCheck } from "lucide-react";
+import { List, PlusCircle, UserPlus, BarChart, ShoppingCart, MonitorSmartphone, Utensils, Users, ClipboardCheck, UtensilsCrossed } from "lucide-react";
 import ComingSoon from "./pages/ComingSoon";
 import { Tooltip } from "antd";
 import KOTKitchenDashboard from "./pages/KOTKitchenDashboard";
@@ -29,6 +30,11 @@ export const billingMenuItems = [
     key: "/billing/pos",
     label: "POS Terminal",
     icon: <MonitorSmartphone size={18} />,
+  },
+  {
+    key: "/billing/waiter",
+    label: "Waiter Service",
+    icon: <UtensilsCrossed size={18} />,
   },
   {
     key: "/billing/kitchen",
@@ -66,6 +72,8 @@ const BillingRoutes = () => {
       <Route path="daily-inventory" element={<DailyInventory />} />
       <Route path="add" element={<BillingForm />} />
       <Route path="pos" element={<POSPage />} />
+      <Route path="waiter" element={<WaiterPage />} />
+      <Route path="kitchen" element={<KOTKitchenDashboard />} />
       <Route path="edit/:id" element={<BillingForm />} />
       <Route path="self-checkout" element={<ComingSoon />} />
       <Route path="customer-copy" element={<CustomerBillCopy />} />

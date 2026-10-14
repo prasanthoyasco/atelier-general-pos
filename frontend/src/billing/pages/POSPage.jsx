@@ -9,9 +9,10 @@ import {
   AlertCircle, ArrowRight, Eye, Layers,
   MoveLeft,
   ArrowLeft,
-  Sparkles
+  Sparkles,
+  ChefHat
 } from "lucide-react";
-import { message, Drawer, Modal, Tag, Select, notification, Radio } from "antd";
+import { message, Drawer, Modal, Tag, Select, notification, Radio, Dropdown } from "antd";
 import productService from "../../Product/services/productService.js";
 import customerService from "../../customer/service/customerService.js";
 import billingService from "../service/billingService.js";
@@ -121,22 +122,6 @@ export default function POSPage() {
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
-  const handleNumpadPress = (btn) => {
-    if (btn.startsWith("₹")) {
-      const amt = btn.replace("₹", "");
-      setTenderedAmount(amt);
-    } else if (btn === "C") {
-      setTenderedAmount("");
-    } else if (btn === "⌫") {
-      setTenderedAmount((prev) => (prev ? prev.slice(0, -1) : ""));
-    } else {
-      setTenderedAmount((prev) => {
-        if (!prev || prev === "0") return btn === "00" ? "0" : btn;
-        return prev + btn;
-      });
-    }
-  };
-
   // Audio alerts
   const [soundEnabled, setSoundEnabled] = useState(true);
 
@@ -190,10 +175,12 @@ export default function POSPage() {
   // Mobile Bottom Sheet
   const [mobileCartOpen, setMobileCartOpen] = useState(false);
 
-  // View KOTs Drawer
+  // View KOTs Drawer & Waiter Pickup Queue
   const [kotDrawerOpen, setKotDrawerOpen] = useState(false);
   const [kitchenOrders, setKitchenOrders] = useState([]);
   const [loadingKitchen, setLoadingKitchen] = useState(false);
+  const [selectedKitchenFilter, setSelectedKitchenFilter] = useState("All");
+  const [servingItemId, setServingItemId] = useState(null);
 
   // Settings Modal
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -231,6 +218,14 @@ export default function POSPage() {
           return valA.localeCompare(valB, undefined, { numeric: true, sensitivity: "base" });
         });
         setTables(sorted);
+        // If current table doesn't belong to this branch, reset to the first table
+        if (sorted.length > 0) {
+          const currentExists = sorted.some((t) => t.id === selectedTableId || t.table_no === tableNo);
+          if (!currentExists) {
+            setTableNo(sorted[0].table_no || sorted[0].table_name || "Table 1");
+            setSelectedTableId(sorted[0].id);
+          }
+        }
       }
     } catch (err) {
       console.error("Failed to fetch tables:", err);
@@ -239,9 +234,6 @@ export default function POSPage() {
 
   useEffect(() => {
     fetchProducts();
-  }, []);
-
-  useEffect(() => {
     if (effectiveBranchId) {
       fetchTables();
       fetchKitchenQueue();
@@ -252,13 +244,123 @@ export default function POSPage() {
   const seenReadyOrderIdsRef = useRef(new Set());
   const initialKdsPollRef = useRef(true);
 
-  // Mark Order as Served from POS (Order Takers / Admin)
+  // Computed kitchen stations for separate pickup queues
+  const kitchenStations = useMemo(() => {
+    const set = new Set();
+    kitchenOrders.forEach((o) => {
+      o.items?.forEach((i) => {
+        if (i.kitchen_name) set.add(i.kitchen_name);
+      });
+    });
+    return ["All", ...Array.from(set)];
+  }, [kitchenOrders]);
+
+  // Real-time ready item metrics per kitchen
+  const kitchenReadyStats = useMemo(() => {
+    const stats = { totalReady: 0, totalPartiallyServed: 0, byKitchen: {} };
+    kitchenOrders.forEach((o) => {
+      if (o.kot_status === "partially_served") stats.totalPartiallyServed++;
+      o.items?.forEach((i) => {
+        const kName = i.kitchen_name || "Main Kitchen";
+        if (!stats.byKitchen[kName]) stats.byKitchen[kName] = { ready: 0, total: 0 };
+        const totalQty = i.quantity || 1;
+        const servedQty = i.served_quantity || 0;
+        const remaining = Math.max(0, totalQty - servedQty);
+        stats.byKitchen[kName].total += totalQty;
+        if ((i.status === "ready" || o.kot_status === "ready") && remaining > 0) {
+          stats.byKitchen[kName].ready += remaining;
+          stats.totalReady += remaining;
+        }
+      });
+    });
+    return stats;
+  }, [kitchenOrders]);
+
+  // Mark an individual line item (or unit) as served independently
+  const handleServeLineItem = async (kotItemId, servedQty = null, itemName = "Item", orderId = null) => {
+    if (!kotItemId || servingItemId === kotItemId) return;
+    setServingItemId(kotItemId);
+
+    // 1. Optimistically update local state immediately
+    setKitchenOrders((prev) =>
+      prev.map((order) => {
+        if (orderId && order.id !== orderId) return order;
+        const hasItem = order.items?.some((it) => it.kot_item_id === kotItemId || it.id === kotItemId);
+        if (!hasItem) return order;
+
+        const updatedItems = order.items.map((it) => {
+          if (it.kot_item_id === kotItemId || it.id === kotItemId) {
+            const currentServed = it.served_quantity || 0;
+            const totalQty = it.quantity || 1;
+            const inc = servedQty !== null && servedQty !== undefined ? parseInt(servedQty, 10) : totalQty - currentServed;
+            const newServed = Math.min(totalQty, currentServed + (isNaN(inc) ? 1 : inc));
+            const isServed = newServed >= totalQty;
+            return {
+              ...it,
+              served_quantity: newServed,
+              status: isServed ? "served" : "partially_served",
+              is_served: isServed,
+            };
+          }
+          return it;
+        });
+
+        const allServed = updatedItems.every((it) => it.is_served);
+        const anyServed = updatedItems.some((it) => it.served_quantity > 0 || it.is_served);
+        const newKotStatus = allServed ? "served" : anyServed ? "partially_served" : order.kot_status;
+
+        return {
+          ...order,
+          items: updatedItems,
+          kot_status: newKotStatus,
+        };
+      })
+    );
+
+    try {
+      const res = await billingService.serveKOTItem(kotItemId, servedQty, effectiveBranchId);
+      message.success(res?.message || `${itemName} served!`);
+
+      // 2. Broadcast to Kitchen KDS and all other waiter devices
+      broadcastKOTEvent("KOT_ITEM_SERVED", {
+        kot_item_id: kotItemId,
+        served_quantity: servedQty,
+        order_id: orderId,
+        data: res?.data,
+      });
+      broadcastKOTEvent("KOT_STATUS_UPDATED", {
+        id: orderId,
+        status: res?.data?.kot_status || "partially_served",
+      });
+
+      // 3. Background queue sync
+      fetchKitchenQueue();
+    } catch (err) {
+      console.error("Failed to serve item:", err);
+      message.error(err?.response?.data?.error || err?.message || "Failed to mark item served");
+      fetchKitchenQueue();
+    } finally {
+      setServingItemId(null);
+    }
+  };
+
+  // Mark Order as Fully Served from POS (Order Takers / Admin)
   const handleMarkOrderServed = async (orderId, orderLabel = "Order") => {
     // 1. Optimistically update local state immediately
     setKitchenOrders((prev) =>
       prev.map((o) =>
         o.id === orderId
-          ? { ...o, kot_status: "served", kot_served_at: new Date().toISOString() }
+          ? {
+              ...o,
+              kot_status: "served",
+              kot_served_at: new Date().toISOString(),
+              items: o.items?.map((it) => ({
+                ...it,
+                status: "served",
+                served_quantity: it.quantity || 1,
+                is_served: true,
+              })),
+            }
           : o
       )
     );
@@ -269,7 +371,7 @@ export default function POSPage() {
     try {
       // 3. Persist to server
       await billingService.updateKOTStatus(orderId, "served", null, effectiveBranchId);
-      message.success(`${orderLabel} marked as served!`);
+      message.success(`${orderLabel} marked as fully served!`);
 
       // 4. Instant cross-tab broadcast to Kitchen KDS and all other tabs
       broadcastKOTEvent("KOT_STATUS_UPDATED", {
@@ -424,7 +526,13 @@ export default function POSPage() {
         }
       }
 
-      if (eventType === "KOT_STATUS_UPDATED" || eventType === "KOT_SERVED" || eventType === "NEW_KOT_ORDER") {
+      if (
+        eventType === "KOT_STATUS_UPDATED" ||
+        eventType === "KOT_SERVED" ||
+        eventType === "NEW_KOT_ORDER" ||
+        eventType === "KOT_ITEM_STATUS_UPDATED" ||
+        eventType === "KOT_ITEM_SERVED"
+      ) {
         fetchKitchenQueue();
       }
     };
@@ -1098,98 +1206,234 @@ export default function POSPage() {
     }
   };
 
+  // Dropdown menu items for clicking branch name in header
+  const branchMenuItems = useMemo(() => {
+    if (!branches || branches.length === 0) {
+      return [
+        {
+          key: "single-branch",
+          disabled: true,
+          label: (
+            <div className="py-1 px-1">
+              <span className="text-xs font-bold text-slate-700 block">{effectiveBranchName}</span>
+              <span className="text-[10px] text-slate-400">Only 1 branch assigned</span>
+            </div>
+          ),
+        },
+      ];
+    }
+
+    return branches.map((b) => {
+      const bId = b.branch_id;
+      const bName = b.branch?.branch_name || b.branch?.name || b.name || "Branch";
+      const bCode = b.branch?.branch_code || b.branch?.code || "";
+      const isCurrent = bId === effectiveBranchId;
+
+      return {
+        key: bId,
+        onClick: () => {
+          if (bId !== effectiveBranchId && changeBranch) {
+            changeBranch(bId);
+            setCart([]);
+            setLoadedBillId(null);
+            clearCustomer();
+          }
+        },
+        label: (
+          <div className="flex items-center justify-between gap-3 py-1.5 px-1 min-w-[210px]">
+            <div className="flex items-center gap-2">
+              <div
+                className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
+                  isCurrent ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-500"
+                }`}
+              >
+                <Store size={14} />
+              </div>
+              <div className="min-w-0">
+                <p
+                  className={`text-xs font-bold leading-tight mb-0 truncate max-w-[150px] ${
+                    isCurrent ? "text-emerald-700 font-black" : "text-slate-800"
+                  }`}
+                >
+                  {bName}
+                </p>
+                {bCode && (
+                  <p className="text-[10px] text-slate-400 mb-0 font-medium">Code: {bCode}</p>
+                )}
+              </div>
+            </div>
+            {isCurrent && (
+              <span className="w-5 h-5 rounded-full bg-emerald-500 text-white flex items-center justify-center shrink-0">
+                <Check size={12} strokeWidth={3} />
+              </span>
+            )}
+          </div>
+        ),
+      };
+    });
+  }, [branches, effectiveBranchId, effectiveBranchName, changeBranch]);
+
+  // User quick actions dropdown menu
+  const userMenuItems = [
+    {
+      key: "user-info",
+      disabled: true,
+      label: (
+        <div className="py-1 px-1">
+          <p className="font-bold text-slate-800 text-sm mb-0">{user?.username || "Staff"}</p>
+          <p className="text-[11px] text-slate-500 uppercase tracking-wider mb-0 font-medium">
+            {user?.role?.role_name || user?.role_name || "Staff"}
+          </p>
+        </div>
+      ),
+    },
+    { type: "divider" },
+    {
+      key: "switch-branch",
+      icon: <Store size={16} className="text-emerald-600" />,
+      label: `Switch Branch (${effectiveBranchName})`,
+      children: branches && branches.length > 0 ? branchMenuItems : undefined,
+    },
+    {
+      key: "daily-stock",
+      icon: <ClipboardList size={16} className="text-indigo-600" />,
+      label: "Daily Stock & Inventory",
+      onClick: () => setDailyStockModalOpen(true),
+    },
+    {
+      key: "tables",
+      icon: <Armchair size={16} className="text-amber-600" />,
+      label: `Tables (${tableNo})`,
+      onClick: () => setTablesModalOpen(true),
+    },
+    {
+      key: "billing-list",
+      icon: <Receipt size={16} className="text-emerald-600" />,
+      label: "Billing & Order List",
+      onClick: () => navigate("/billing/list"),
+    },
+    {
+      key: "waiter-service",
+      icon: <UtensilsCrossed size={16} className="text-teal-600" />,
+      label: "Waiter Handheld Service",
+      onClick: () => navigate("/billing/waiter"),
+    },
+    {
+      key: "kitchen",
+      icon: <UtensilsCrossed size={16} className="text-rose-600" />,
+      label: "Kitchen KOT Display",
+      onClick: () => navigate("/billing/kitchen"),
+    },
+    { type: "divider" },
+    {
+      key: "logout",
+      danger: true,
+      icon: <ArrowRight size={16} />,
+      label: "Exit POS",
+      onClick: () => navigate("/billing/list"),
+    },
+  ];
+
   return (
     <div className="h-screen w-full bg-[#F8FAFC] flex flex-col overflow-hidden font-sans select-none">
       {/* 1. TOP HEADER BAR */}
-      <header className="h-16 bg-white border-b border-slate-200/90 px-4 md:px-6 flex items-center justify-between shrink-0 z-20">
+      <header className="h-13 sm:h-16 bg-white border-b border-slate-200/90 px-2 sm:px-4 md:px-6 flex items-center justify-between shrink-0 z-20 gap-1.5 sm:gap-2">
         {/* Left: Store identity & nav */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-1 sm:gap-2 min-w-0 shrink">
           <button
             onClick={() => navigate("/billing/list")}
-            aria-label="Navigation Menu"
-            className="w-10 h-10 rounded-xl hover:bg-slate-100 flex items-center justify-center text-slate-700 transition cursor-pointer"
+            aria-label="Back to Billing List"
+            className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-slate-100 hover:bg-slate-200/80 flex items-center justify-center text-slate-700 transition cursor-pointer shrink-0"
           >
-            <ArrowLeft size={22} />
+            <ArrowLeft size={17} className="sm:w-5 sm:h-5" />
           </button>
 
-          <div className="flex items-center gap-2.5">
-            <div className="w-10 h-10 rounded-xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600 shrink-0">
-              <Store size={22} />
-            </div>
-            <div>
-              {branches && branches.length > 1 ? (
-                <Select
-                  value={effectiveBranchId}
-                  onChange={(val) => changeBranch(val)}
-                  options={branches.map((b) => ({
-                    value: b.branch_id,
-                    label: b.branch?.branch_name || b.branch?.name || "Branch",
-                  }))}
-                  className="w-36 md:w-44 font-bold text-sm"
-                  popupMatchSelectWidth={false}
-                />
-              ) : (
-                <h1 className="text-sm hidden md:block md:text-base font-bold text-slate-800 !mb-0 leading-tight">
-                  {selectedBranch?.name && selectedBranch.name !== "All Branches"
-                    ? selectedBranch.name
-                    : branches?.[0]?.branch?.branch_name || "Sweets & Snacks POS"}
-                </h1>
-              )}
-            </div>
-          </div>
+          {/* Clickable Branch Switcher Dropdown */}
+          <Dropdown
+            menu={{ items: branchMenuItems }}
+            trigger={["click"]}
+            placement="bottomLeft"
+          >
+            <button
+              type="button"
+              className="flex items-center gap-1 sm:gap-2 px-1.5 sm:px-3 h-8 sm:h-10 rounded-xl border border-slate-200/90 bg-slate-50/90 hover:bg-slate-100 hover:border-slate-300 active:scale-[0.98] text-slate-800 transition cursor-pointer select-none group shrink-0 shadow-2xs"
+              title="Click to switch branch"
+            >
+              <div className="w-5 h-5 sm:w-7 sm:h-7 rounded-lg bg-emerald-50 border border-emerald-200/70 text-emerald-600 flex items-center justify-center shrink-0">
+                <Store size={12} className="sm:w-4 sm:h-4" />
+              </div>
+              <div className="text-left min-w-0">
+                <span className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider hidden sm:block leading-none">
+                  Branch
+                </span>
+                <span className="text-xs sm:text-sm font-black text-slate-800 truncate block leading-tight max-w-[65px] xs:max-w-[85px] sm:max-w-[150px] md:max-w-[200px]">
+                  {effectiveBranchName}
+                </span>
+              </div>
+              <ChevronDown
+                size={12}
+                className="text-slate-400 group-hover:text-slate-700 transition shrink-0 ml-0.5"
+              />
+            </button>
+          </Dropdown>
         </div>
 
-        {/* Center / Right: Table Switcher, Online Status, Time, and Staff Badge */}
-        <div className="flex items-center gap-3 md:gap-4">
+        {/* Center / Right: Table Switcher, Daily Stock, Online Status, Time, and Staff Badge */}
+        <div className="flex items-center gap-1 sm:gap-2 md:gap-3 shrink-0">
           {/* Table Management Trigger */}
           <button
             onClick={() => setTablesModalOpen(true)}
-            className={`px-3 py-1.5 rounded-xl border font-bold text-xs md:text-sm flex items-center gap-2 transition cursor-pointer shadow-sm ${
+            className={`h-8 sm:h-9 px-1.5 sm:px-3 rounded-xl border font-bold text-xs sm:text-sm flex items-center gap-1 sm:gap-1.5 transition cursor-pointer shadow-xs shrink-0 ${
               activeTablesCount > 0
                 ? "bg-amber-50 border-amber-300 text-amber-900 hover:bg-amber-100"
                 : "bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100"
             }`}
           >
-            <Armchair size={17} className={activeTablesCount > 0 ? "text-amber-600" : "text-slate-500"} />
-            <span>{tableNo}</span>
+            <Armchair size={13} className={activeTablesCount > 0 ? "text-amber-600 shrink-0" : "text-slate-500 shrink-0"} />
+            <span className="truncate max-w-[42px] sm:max-w-none text-[11px] sm:text-xs md:text-sm">{tableNo}</span>
             {activeTablesCount > 0 && (
-              <span className="px-2 py-0.5 rounded-full bg-amber-500 text-white text-[10px] font-black animate-pulse">
-                {activeTablesCount} Active
+              <span className="px-1 py-0.2 sm:px-1.5 sm:py-0.5 rounded-full bg-amber-500 text-white text-[8px] sm:text-[9px] font-black leading-none animate-pulse">
+                {activeTablesCount}
               </span>
             )}
-            <ChevronDown size={14} className="text-slate-400" />
+            <ChevronDown size={11} className="text-slate-400 shrink-0" />
           </button>
 
           {/* Daily Stock Quick Button */}
           <button
             onClick={() => setDailyStockModalOpen(true)}
-            className="px-3 py-1.5 rounded-xl border border-indigo-200 bg-indigo-50/80 hover:bg-indigo-100 text-indigo-800 font-bold text-xs md:text-sm flex items-center gap-1.5 transition cursor-pointer shadow-sm"
+            className="h-8 sm:h-9 w-8 sm:w-auto px-0 sm:px-3 rounded-xl border border-indigo-200 bg-indigo-50/90 hover:bg-indigo-100 text-indigo-800 font-bold text-xs sm:text-sm flex items-center justify-center gap-1.5 transition cursor-pointer shadow-xs shrink-0"
             title="Daily Stock: Morning purchase arrivals & evening closing count"
           >
-            <ClipboardList size={16} className="text-indigo-600" />
+            <ClipboardList size={14} className="text-indigo-600 shrink-0" />
             <span className="hidden sm:inline">Daily Stock</span>
           </button>
 
-
-          <div className="hidden sm:flex items-center gap-1.5 text-xs font-semibold text-emerald-600 bg-emerald-50/80 px-2.5 py-1 rounded-full border border-emerald-100">
+          <div className="hidden sm:flex items-center gap-1.5 text-xs font-semibold text-emerald-600 bg-emerald-50/80 px-2.5 py-1 rounded-full border border-emerald-100 shrink-0">
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
             <span>Online</span>
           </div>
 
-          <div className="hidden md:flex items-center gap-1.5 text-xs text-slate-500 font-medium">
+          <div className="hidden md:flex items-center gap-1.5 text-xs text-slate-500 font-medium shrink-0">
             <Clock size={14} className="text-slate-400" />
             <span>{dayjs(currentTime).format("DD MMM YYYY  hh:mm A")}</span>
           </div>
 
-          {/* User badge */}
-          <div className="flex items-center gap-2 pl-2 border-l border-slate-200">
-            <div className="w-8 h-8 rounded-full bg-[#1E293B] text-white flex items-center justify-center text-xs font-bold shrink-0">
-              <User size={16} />
-            </div>
-            <span className="text-xs font-semibold text-slate-800 hidden sm:inline">
-              {user?.username || "Staff"}
-            </span>
-          </div>
+          {/* User badge with dropdown */}
+          <Dropdown menu={{ items: userMenuItems }} placement="bottomRight" trigger={["click"]}>
+            <button
+              type="button"
+              className="h-8 sm:h-9 flex items-center gap-1 sm:gap-2 pl-0.5 sm:pl-2 sm:border-l sm:border-slate-200 cursor-pointer group bg-transparent border-0 outline-none shrink-0"
+              title="User profile & shortcuts"
+            >
+              <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-[#1E293B] group-hover:bg-slate-700 text-white flex items-center justify-center text-xs font-bold shrink-0 transition shadow-xs">
+                <User size={13} className="sm:w-3.5 sm:h-3.5" />
+              </div>
+              <span className="text-xs font-semibold text-slate-800 hidden sm:inline truncate max-w-[80px]">
+                {user?.username || "Staff"}
+              </span>
+            </button>
+          </Dropdown>
         </div>
       </header>
 
@@ -1596,7 +1840,10 @@ export default function POSPage() {
             <span className="flex items-center gap-1.5">
               <UtensilsCrossed size={14} /> {readyOrdersCount} Order(s) Ready to Serve!
             </span>
-            <span className="underline text-[11px]">View & Serve →</span>
+            <span className="text-[11px] font-bold flex items-center gap-1">
+              <span>View & Serve</span>
+              <ArrowRight size={12} className="shrink-0" />
+            </span>
           </div>
         )}
 
@@ -1873,27 +2120,94 @@ export default function POSPage() {
         </div>
       </Modal>
 
-      {/* ================= 6. VIEW KOTS SLIDE-OVER DRAWER ================= */}
+      {/* ================= 6. VIEW KOTS SLIDE-OVER DRAWER (WAITER PICKUP QUEUE) ================= */}
       <Drawer
         placement="right"
-        width={380}
+        width={isMobile ? "100%" : 460}
         onClose={() => setKotDrawerOpen(false)}
         open={kotDrawerOpen}
         title={
-          <div className="flex items-center justify-between">
-            <span className="font-bold text-slate-800 text-sm flex items-center gap-2">
-              <ClipboardList size={16} className="text-orange-500" /> Active Kitchen Orders
-            </span>
-            <button
-              onClick={() => navigate("/billing/kitchen")}
-              className="text-xs font-bold text-blue-600 hover:underline cursor-pointer"
-            >
-              Open KDS →
-            </button>
+          <div className="flex items-center justify-between w-full pr-2">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-xl bg-orange-100 text-orange-600 flex items-center justify-center font-bold">
+                <ClipboardList size={17} />
+              </div>
+              <div>
+                <span className="font-black text-slate-800 text-sm block leading-tight">
+                  Waiter Pickup Queue
+                </span>
+                <span className="text-[11px] font-medium text-slate-400">
+                  Separate Kitchen Queues & Item Serving
+                </span>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={fetchKitchenQueue}
+                disabled={loadingKitchen}
+                title="Refresh pickup queue"
+                className="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 transition cursor-pointer"
+              >
+                <RefreshCw size={14} className={loadingKitchen ? "animate-spin text-blue-600" : ""} />
+              </button>
+              <button
+                onClick={() => navigate("/billing/kitchen")}
+                className="text-xs font-bold text-blue-600 hover:text-blue-700 bg-blue-50 px-2.5 py-1 rounded-lg border border-blue-200/80 flex items-center gap-1 cursor-pointer transition"
+              >
+                <span>Open KDS</span>
+                <ArrowRight size={12} />
+              </button>
+            </div>
           </div>
         }
       >
         <div className="space-y-3">
+          {/* Station Filter Pills Bar */}
+          <div className="pb-3 border-b border-slate-100 space-y-2">
+            <div className="flex items-center justify-between text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+              <span>Filter by Kitchen Station</span>
+              {kitchenReadyStats.totalReady > 0 && (
+                <span className="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 font-extrabold flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  {kitchenReadyStats.totalReady} ready for pickup
+                </span>
+              )}
+            </div>
+            <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+              {kitchenStations.map((station) => {
+                const isSelected = selectedKitchenFilter === station;
+                const stationReady =
+                  station === "All"
+                    ? kitchenReadyStats.totalReady
+                    : kitchenReadyStats.byKitchen[station]?.ready || 0;
+
+                return (
+                  <button
+                    key={station}
+                    onClick={() => setSelectedKitchenFilter(station)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap flex items-center gap-1.5 transition cursor-pointer select-none ${
+                      isSelected
+                        ? "bg-slate-900 !text-white shadow-xs"
+                        : "bg-slate-100 hover:bg-slate-200/80 text-slate-700 border border-slate-200/60"
+                    }`}
+                  >
+                    <ChefHat size={13} className={isSelected ? "text-orange-400" : "text-slate-400"} />
+                    <span>{station === "All" ? "All Kitchens" : station}</span>
+                    {stationReady > 0 && (
+                      <span
+                        className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${
+                          isSelected ? "bg-emerald-500 text-white" : "bg-emerald-100 text-emerald-800"
+                        }`}
+                      >
+                        {stationReady}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
           {loadingKitchen && kitchenOrders.length === 0 ? (
             <div className="py-12 text-center text-slate-400 text-xs font-semibold">
               Loading kitchen orders...
@@ -1904,91 +2218,259 @@ export default function POSPage() {
             </div>
           ) : (
             [...kitchenOrders]
+              .filter((order) => {
+                if (selectedKitchenFilter === "All") return true;
+                return order.items?.some(
+                  (it) => (it.kitchen_name || "Main Kitchen") === selectedKitchenFilter
+                );
+              })
               .sort((a, b) => {
-                const rank = { ready: 1, preparing: 2, pending: 3, served: 4 };
+                const rank = { ready: 1, partially_ready: 2, preparing: 3, partially_served: 4, pending: 5, served: 6 };
                 return (rank[a.kot_status] || 99) - (rank[b.kot_status] || 99);
               })
-              .map((order) => (
-              <div
-                key={order.id}
-                className={`p-3.5 rounded-2xl border space-y-2.5 transition-all duration-200 ${
-                  order.kot_status === "ready"
-                    ? "bg-emerald-50/70 border-emerald-300 ring-2 ring-emerald-400/20"
-                    : order.kot_status === "served"
-                    ? "bg-slate-50/60 border-slate-200 opacity-80"
-                    : "bg-slate-50 border-slate-200/90"
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <span className="font-black text-slate-900 text-sm">
-                    {order.kot_number ? `KOT #${order.kot_number}` : order.billing_no}
-                  </span>
-                  {order.kot_status === "pending" && (
-                    <Tag color="error" className="font-bold rounded-md">
-                      New
-                    </Tag>
-                  )}
-                  {order.kot_status === "preparing" && (
-                    <Tag color="warning" className="font-bold rounded-md animate-pulse">
-                      Cooking
-                    </Tag>
-                  )}
-                  {order.kot_status === "ready" && (
-                    <Tag color="success" className="font-bold rounded-md !flex items-center gap-1 !ml-0">
-                      <Check size={11} strokeWidth={3} /> Ready to Serve
-                    </Tag>
-                  )}
-                  {order.kot_status === "served" && (
-                    <Tag color="purple" className="font-bold rounded-md !flex items-center gap-1 !ml-0">
-                      <CheckCircle2 size={11} strokeWidth={3} /> Served
-                    </Tag>
-                  )}
-                </div>
+              .map((order) => {
+                const isOrderFullyServed = order.kot_status === "served";
+                const isOrderPartiallyServed = order.kot_status === "partially_served";
+                const isOrderReady = order.kot_status === "ready";
+                const isOrderPartiallyReady = order.kot_status === "partially_ready";
+                const isOrderCooking = order.kot_status === "preparing";
 
-                <div className="text-xs text-slate-600 font-medium flex items-center justify-between">
-                  <span className="font-bold bg-white px-2 py-0.5 rounded-md border border-slate-200/80">
-                    {order.table_no || "Counter 1"}
-                  </span>
-                  <span>{order.items?.length || 0} items</span>
-                </div>
+                // Filter items if specific kitchen is selected
+                const displayItems =
+                  selectedKitchenFilter === "All"
+                    ? order.items || []
+                    : (order.items || []).filter(
+                        (it) => (it.kitchen_name || "Main Kitchen") === selectedKitchenFilter
+                      );
 
-                {/* Items summary */}
-                <div className="pt-1.5 border-t border-slate-200/60 text-xs font-semibold text-slate-700 space-y-1">
-                  {order.items?.map((it, idx) => (
-                    <div key={idx} className="flex justify-between">
-                      <span className="truncate">{it.product_name}</span>
-                      <span>× {it.quantity}</span>
-                    </div>
-                  ))}
-                </div>
-
-                {/* Actions: Load Order + 1-Tap Served Action for Order Taker */}
-                <div className="pt-2 flex items-center gap-2">
-                  <button
-                    onClick={() => {
-                      setKotDrawerOpen(false);
-                      loadBillIntoCart(order);
-                    }}
-                    className="flex-1 py-1.5 px-2 bg-white hover:bg-slate-100 border border-slate-200 text-slate-800 rounded-lg text-xs font-bold transition cursor-pointer"
+                return (
+                  <div
+                    key={order.id}
+                    className={`p-3.5 rounded-2xl border space-y-3 transition-all duration-200 ${
+                      isOrderReady
+                        ? "bg-emerald-50/70 border-emerald-300 ring-2 ring-emerald-400/20"
+                        : isOrderPartiallyReady
+                        ? "bg-teal-50/70 border-teal-300 ring-2 ring-teal-400/20"
+                        : isOrderPartiallyServed
+                        ? "bg-indigo-50/60 border-indigo-200 ring-2 ring-indigo-400/15"
+                        : isOrderFullyServed
+                        ? "bg-slate-50/60 border-slate-200 opacity-80"
+                        : "bg-slate-50 border-slate-200/90"
+                    }`}
                   >
-                    Load Order
-                  </button>
-                  {order.kot_status === "ready" && (
-                    <button
-                      onClick={() =>
-                        handleMarkOrderServed(
-                          order.id,
-                          order.kot_number ? `KOT #${order.kot_number}` : order.billing_no
-                        )
-                      }
-                      className="flex-1 py-1.5 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] !text-white rounded-lg text-xs font-bold uppercase tracking-wide flex items-center justify-center gap-1 shadow-sm shadow-emerald-500/20 cursor-pointer transition"
-                    >
-                      <Check size={14} strokeWidth={2.5} /> Mark Served
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))
+                    {/* Order Top Bar: KOT/Bill Number + Table Badge + Status Tag */}
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="font-black text-slate-900 text-sm">
+                          {order.kot_number ? `KOT #${order.kot_number}` : order.billing_no}
+                        </span>
+                        <span className="font-bold text-xs bg-white px-2 py-0.5 rounded-md border border-slate-200 text-slate-700">
+                          {order.table_no || "Counter"}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-1.5">
+                        {/* Decoupled Payment Status Pill */}
+                        <Tag
+                          color={order.status === "paid" ? "green" : "default"}
+                          className="font-bold text-[10px] m-0 rounded-md"
+                        >
+                          {order.status === "paid" ? "Paid" : "Unpaid"}
+                        </Tag>
+
+                        {/* Food Serving Status Pill */}
+                        {isOrderFullyServed ? (
+                          <Tag color="purple" className="font-bold text-[10px] m-0 rounded-md flex items-center gap-1">
+                            <CheckCircle2 size={11} strokeWidth={3} /> Served
+                          </Tag>
+                        ) : isOrderPartiallyServed ? (
+                          <Tag color="geekblue" className="font-bold text-[10px] m-0 rounded-md">
+                            Partially Served
+                          </Tag>
+                        ) : isOrderReady ? (
+                          <Tag color="success" className="font-bold text-[10px] m-0 rounded-md flex items-center gap-1">
+                            <Check size={11} strokeWidth={3} /> Ready to Serve
+                          </Tag>
+                        ) : isOrderPartiallyReady ? (
+                          <Tag color="cyan" className="font-bold text-[10px] m-0 rounded-md">
+                            Partially Ready
+                          </Tag>
+                        ) : isOrderCooking ? (
+                          <Tag color="warning" className="font-bold text-[10px] m-0 rounded-md animate-pulse">
+                            Cooking
+                          </Tag>
+                        ) : (
+                          <Tag color="error" className="font-bold text-[10px] m-0 rounded-md">
+                            New
+                          </Tag>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Customer info & Item count */}
+                    <div className="text-[11px] text-slate-500 font-medium flex items-center justify-between">
+                      <span>{order.customer_name ? `Customer: ${order.customer_name}` : "Dine-in Order"}</span>
+                      <span>{order.items?.length || 0} line item(s)</span>
+                    </div>
+
+                    {/* Line Items List with Separate Kitchen Queues & Unit Serving */}
+                    <div className="pt-2 border-t border-slate-200/60 space-y-2">
+                      {displayItems.map((it, idx) => {
+                        const totalQty = it.quantity || 1;
+                        const servedQty = it.served_quantity || 0;
+                        const remaining = Math.max(0, totalQty - servedQty);
+                        const isLineFullyServed = it.is_served || remaining === 0;
+                        const isLinePartiallyServed = servedQty > 0 && remaining > 0;
+                        const isLineReady = it.status === "ready" || isOrderReady;
+                        const isLineCooking = it.status === "preparing";
+                        const isBeingServed = servingItemId === it.kot_item_id;
+
+                        return (
+                          <div
+                            key={it.kot_item_id || idx}
+                            className={`p-2.5 rounded-xl border text-xs transition-all ${
+                              isLineFullyServed
+                                ? "bg-slate-100/70 border-slate-200 text-slate-500 opacity-80"
+                                : isLineReady
+                                ? "bg-emerald-50/90 border-emerald-300 ring-1 ring-emerald-400/20 shadow-2xs"
+                                : isLinePartiallyServed
+                                ? "bg-indigo-50/80 border-indigo-200"
+                                : "bg-white border-slate-200/90"
+                            }`}
+                          >
+                            {/* Line Item Header: Station Badge + Item Name + Status Tag */}
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  {/* Separate Kitchen Station Badge */}
+                                  <span className="text-[10px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded-md bg-slate-200/80 text-slate-700 flex items-center gap-1">
+                                    <ChefHat size={11} className="text-orange-500" />
+                                    {it.kitchen_name || "Main Kitchen"}
+                                  </span>
+
+                                  <span className="font-bold text-slate-800 text-xs truncate">
+                                    {it.product_name}
+                                  </span>
+                                </div>
+
+                                {it.addons && it.addons.length > 0 && (
+                                  <div className="text-[10px] text-slate-400 font-medium mt-0.5">
+                                    + {it.addons.map((a) => a.addon_name || a.name).join(", ")}
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Item Line Status Tag */}
+                              <div>
+                                {isLineFullyServed ? (
+                                  <Tag color="default" className="font-bold text-[10px] m-0 rounded-md">
+                                    ✓ Served
+                                  </Tag>
+                                ) : isLinePartiallyServed ? (
+                                  <Tag color="geekblue" className="font-bold text-[10px] m-0 rounded-md">
+                                    {servedQty}/{totalQty} Served
+                                  </Tag>
+                                ) : isLineReady ? (
+                                  <Tag color="success" className="font-bold text-[10px] m-0 rounded-md animate-pulse">
+                                    Ready
+                                  </Tag>
+                                ) : isLineCooking ? (
+                                  <Tag color="warning" className="font-bold text-[10px] m-0 rounded-md">
+                                    Cooking
+                                  </Tag>
+                                ) : (
+                                  <Tag color="default" className="font-bold text-[10px] m-0 rounded-md">
+                                    Queued
+                                  </Tag>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Quantity Tracker Bar & Action Buttons */}
+                            <div className="pt-2 mt-1.5 border-t border-slate-200/60 flex items-center justify-between gap-2">
+                              {/* Quantity Info */}
+                              <div className="flex items-center gap-1.5 text-[11px] font-bold text-slate-600">
+                                <span>Total: {totalQty}</span>
+                                {totalQty > 1 && (
+                                  <span className="text-slate-400">
+                                    • Served: <strong className="text-slate-800">{servedQty}</strong>/{totalQty}
+                                  </span>
+                                )}
+                              </div>
+
+                              {/* Serving Action Controls */}
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                {isLineFullyServed ? (
+                                  <span className="text-[11px] font-bold text-slate-400 flex items-center gap-1 px-2 py-1">
+                                    <Check size={12} strokeWidth={2.5} /> Line Done
+                                  </span>
+                                ) : (
+                                  <>
+                                    {/* Unit-by-unit serving if quantity > 1 */}
+                                    {totalQty > 1 && (
+                                      <button
+                                        type="button"
+                                        disabled={isBeingServed || remaining <= 0}
+                                        onClick={() =>
+                                          handleServeLineItem(it.kot_item_id, 1, it.product_name, order.id)
+                                        }
+                                        className="py-1 px-2.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 font-black text-[11px] border border-blue-200 transition cursor-pointer disabled:opacity-50"
+                                        title="Serve 1 unit"
+                                      >
+                                        +1 Serve
+                                      </button>
+                                    )}
+
+                                    {/* Serve all remaining units of this line */}
+                                    <button
+                                      type="button"
+                                      disabled={isBeingServed || remaining <= 0}
+                                      onClick={() =>
+                                        handleServeLineItem(it.kot_item_id, null, it.product_name, order.id)
+                                      }
+                                      className="py-1 px-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 active:scale-95 !text-white font-black text-[11px] flex items-center gap-1 shadow-2xs transition cursor-pointer disabled:opacity-50"
+                                    >
+                                      <Check size={12} strokeWidth={2.5} />
+                                      <span>{totalQty > 1 ? `Serve Line (${remaining})` : "Serve"}</span>
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Order Level Actions: Load Order + Serve All Order */}
+                    <div className="pt-2 flex items-center gap-2">
+                      <button
+                        onClick={() => {
+                          setKotDrawerOpen(false);
+                          loadBillIntoCart(order);
+                        }}
+                        className="flex-1 py-1.5 px-2 bg-white hover:bg-slate-100 border border-slate-200 text-slate-800 rounded-lg text-xs font-bold transition cursor-pointer"
+                      >
+                        Load Order
+                      </button>
+
+                      {!isOrderFullyServed && (
+                        <button
+                          onClick={() =>
+                            handleMarkOrderServed(
+                              order.id,
+                              order.kot_number ? `KOT #${order.kot_number}` : order.billing_no
+                            )
+                          }
+                          className="flex-1 py-1.5 bg-slate-900 hover:bg-slate-800 active:scale-[0.99] !text-white rounded-lg text-xs font-bold uppercase tracking-wide flex items-center justify-center gap-1 shadow-sm transition cursor-pointer"
+                        >
+                          <CheckCircle2 size={13} strokeWidth={2.5} /> Serve Entire Order
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })
           )}
         </div>
       </Drawer>
@@ -2135,6 +2617,10 @@ export default function POSPage() {
                     isOccupied
                       ? primaryOrder?.kot_status === "ready"
                         ? "bg-emerald-50/80 border-emerald-300 ring-2 ring-emerald-400/30"
+                        : primaryOrder?.kot_status === "partially_ready"
+                        ? "bg-teal-50/80 border-teal-300 ring-2 ring-teal-400/20"
+                        : primaryOrder?.kot_status === "partially_served"
+                        ? "bg-indigo-50/80 border-indigo-300 ring-2 ring-indigo-400/20"
                         : primaryOrder?.kot_status === "served"
                         ? "bg-purple-50/80 border-purple-300 ring-2 ring-purple-400/20"
                         : primaryOrder?.kot_status === "preparing"
@@ -2154,6 +2640,10 @@ export default function POSPage() {
                             isOccupied
                               ? primaryOrder?.kot_status === "ready"
                                 ? "text-emerald-600"
+                                : primaryOrder?.kot_status === "partially_ready"
+                                ? "text-teal-600"
+                                : primaryOrder?.kot_status === "partially_served"
+                                ? "text-indigo-600"
                                 : primaryOrder?.kot_status === "served"
                                 ? "text-purple-600"
                                 : primaryOrder?.kot_status === "preparing"
@@ -2169,8 +2659,12 @@ export default function POSPage() {
                           color={
                             primaryOrder?.kot_status === "ready"
                               ? "success"
+                              : primaryOrder?.kot_status === "partially_ready"
+                              ? "cyan"
                               : primaryOrder?.kot_status === "preparing"
                               ? "warning"
+                              : primaryOrder?.kot_status === "partially_served"
+                              ? "geekblue"
                               : primaryOrder?.kot_status === "served"
                               ? "purple"
                               : "error"
@@ -2179,8 +2673,12 @@ export default function POSPage() {
                         >
                           {primaryOrder?.kot_status === "ready"
                             ? "Ready"
+                            : primaryOrder?.kot_status === "partially_ready"
+                            ? "Part Ready"
                             : primaryOrder?.kot_status === "preparing"
                             ? "Cooking"
+                            : primaryOrder?.kot_status === "partially_served"
+                            ? "Part Served"
                             : primaryOrder?.kot_status === "served"
                             ? "Served"
                             : "New"}
@@ -2361,39 +2859,6 @@ export default function POSPage() {
                 ))}
               </div>
 
-              {/* Virtual Touch Numpad for Mobile & Tablet Touchscreens */}
-              <div className="pt-1 select-none">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5">
-                  Touch Keypad
-                </span>
-                <div className="grid grid-cols-4 gap-1.5">
-                  {["1", "2", "3", "₹100", "4", "5", "6", "₹200", "7", "8", "9", "₹500", "C", "0", "00", "⌫"].map((btn) => {
-                    const isQuickCash = btn.startsWith("₹");
-                    const isClear = btn === "C";
-                    const isBackspace = btn === "⌫";
-
-                    return (
-                      <button
-                        key={btn}
-                        type="button"
-                        onClick={() => handleNumpadPress(btn)}
-                        className={`min-h-[44px] rounded-xl font-black text-sm flex items-center justify-center transition-all active:scale-95 cursor-pointer ${
-                          isQuickCash
-                            ? "bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 text-xs font-bold"
-                            : isClear
-                            ? "bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 font-bold"
-                            : isBackspace
-                            ? "bg-slate-100 text-slate-700 border border-slate-200 hover:bg-slate-200 text-base font-bold"
-                            : "bg-white text-slate-800 border border-slate-200 hover:bg-slate-50 text-base shadow-xs"
-                        }`}
-                      >
-                        {btn}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
               {/* Return Change Pill */}
               {parseFloat(tenderedAmount) >= Math.max(0, total - (parseFloat(discountAmount) || 0)) && (
                 <div className="p-2.5 bg-emerald-100/70 border border-emerald-300 rounded-xl flex justify-between items-center text-emerald-900">
@@ -2529,9 +2994,12 @@ export default function POSPage() {
             <button
               type="button"
               onClick={() => setPaymentModalOpen(false)}
-              className="px-4 py-3 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50 cursor-pointer"
+              aria-label="Cancel payment"
+              className="px-3 sm:px-4 py-3 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-100/80 cursor-pointer flex items-center justify-center shrink-0 transition"
+              title="Cancel payment"
             >
-              Cancel
+              <X size={16} className="sm:hidden" />
+              <span className="hidden sm:inline">Cancel</span>
             </button>
             <button
               type="button"
@@ -2548,7 +3016,7 @@ export default function POSPage() {
               className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 !text-white rounded-xl text-xs font-black uppercase tracking-wide flex items-center justify-center gap-1.5 shadow-md shadow-emerald-500/25 cursor-pointer disabled:opacity-50"
             >
               <Printer size={16} />
-              <span>{settlingPayment ? "Processing..." : "Pay & Print Receipt"}</span>
+              <span>{settlingPayment ? "Processing..." : "Pay & Print"}</span>
             </button>
           </div>
         </div>
