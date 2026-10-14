@@ -50,7 +50,7 @@ const Billing = sequelize.define("Billing", {
     allowNull: false,
   },
   kot_status: {
-    type: DataTypes.ENUM('pending', 'preparing', 'ready', 'served', 'cancelled'),
+    type: DataTypes.ENUM('pending', 'preparing', 'ready', 'partially_ready', 'partially_served', 'served', 'cancelled'),
     allowNull: true,
     defaultValue: null
   },

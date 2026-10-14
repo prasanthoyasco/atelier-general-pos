@@ -15,6 +15,12 @@ router.get("/billing/kitchen-queue", verifyToken, authorize(["kot.view", "billin
 // ✅ Get all billings - allows multiple branches
 router.get("/billing", verifyToken, authorize(["billing.view", "billing.manage"]), authenticateBranch(true), billingController.getAll);
 
+// ✅ Serve individual KOT item (unit or full quantity)
+router.patch("/billing/kot-items/:id/serve", verifyToken, authorize(["kot.serve", "kot.manage", "billing.manage"]), authenticateBranch(), billingController.serveKOTItem);
+
+// ✅ Update individual KOT item status (Kitchen preparation)
+router.patch("/billing/kot-items/:id/status", verifyToken, authorize(["kot.manage", "kot.view", "billing.manage"]), authenticateBranch(), billingController.updateKOTItemStatus);
+
 // ✅ Update KOT Status
 router.patch("/billing/:id/kot-status", verifyToken, authorize(["kot.manage", "kot.serve", "billing.manage"]), authenticateBranch(), billingController.updateKOTStatus);
 

@@ -24,7 +24,7 @@ const BillingKOT = sequelize.define("BillingKOT", {
         allowNull: false,
     },
     status: {
-        type: DataTypes.ENUM('pending', 'preparing', 'ready', 'served', 'cancelled'),
+        type: DataTypes.ENUM('pending', 'preparing', 'ready', 'partially_ready', 'partially_served', 'served', 'cancelled'),
         defaultValue: 'pending',
         allowNull: false,
     },

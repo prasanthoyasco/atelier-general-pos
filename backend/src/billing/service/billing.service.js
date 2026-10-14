@@ -286,6 +286,8 @@ const billingService = {
                id: uuidv4(),
                kot_id: kot.id,
                billing_item_id: bItem.id,
+               quantity: bItem.quantity || 1,
+               served_quantity: 0,
                status: 'pending'
            }));
            
@@ -725,6 +727,84 @@ const billingService = {
     });
   },
 
+  // ✅ Recalculate status of a BillingKOT and its parent Billing order
+  async recalculateKotAndBillingStatus(kotId, userId = null) {
+    const kot = await BillingKOT.findByPk(kotId, {
+      include: [{ model: BillingKOTItem, as: 'kotItems' }]
+    });
+    if (!kot) return { kot: null, newKotStatus: null };
+
+    const items = kot.kotItems || [];
+    const activeItems = items.filter(it => it.status !== 'cancelled');
+
+    let newKotStatus = 'pending';
+    if (activeItems.length > 0) {
+      const allServed = activeItems.every(it => (it.served_quantity >= it.quantity) || it.status === 'served');
+      const anyServed = activeItems.some(it => (it.served_quantity > 0) || it.status === 'served' || it.status === 'partially_served');
+      const allReady = activeItems.every(it => it.status === 'ready' || it.status === 'served');
+      const anyReady = activeItems.some(it => it.status === 'ready' || it.status === 'partially_ready');
+      const anyPreparing = activeItems.some(it => it.status === 'preparing');
+
+      if (allServed) {
+        newKotStatus = 'served';
+      } else if (anyServed) {
+        newKotStatus = 'partially_served';
+      } else if (allReady) {
+        newKotStatus = 'ready';
+      } else if (anyReady) {
+        newKotStatus = 'partially_ready';
+      } else if (anyPreparing) {
+        newKotStatus = 'preparing';
+      } else {
+        newKotStatus = 'pending';
+      }
+    }
+
+    const now = new Date();
+    const kotUpdate = { status: newKotStatus };
+    if (newKotStatus === 'served' && !kot.served_at) {
+      kotUpdate.served_at = now;
+      if (userId) kotUpdate.served_by = userId;
+    } else if (newKotStatus === 'ready' && !kot.ready_at) {
+      kotUpdate.ready_at = now;
+      if (userId) kotUpdate.ready_by = userId;
+    }
+    await kot.update(kotUpdate);
+
+    // Now recalculate parent bill overall kot_status (keeping bill.status / payment status separate!)
+    if (kot.billing_id) {
+      const allKots = await BillingKOT.findAll({ where: { billing_id: kot.billing_id } });
+      const activeKots = allKots.filter(k => k.status !== 'cancelled');
+
+      let overallKotStatus = 'pending';
+      if (activeKots.length > 0) {
+        if (activeKots.every(k => k.status === 'served')) {
+          overallKotStatus = 'served';
+        } else if (activeKots.some(k => k.status === 'served' || k.status === 'partially_served')) {
+          overallKotStatus = 'partially_served';
+        } else if (activeKots.every(k => k.status === 'ready' || k.status === 'served')) {
+          overallKotStatus = 'ready';
+        } else if (activeKots.some(k => k.status === 'ready' || k.status === 'partially_ready')) {
+          overallKotStatus = 'partially_ready';
+        } else if (activeKots.some(k => k.status === 'preparing')) {
+          overallKotStatus = 'preparing';
+        } else {
+          overallKotStatus = 'pending';
+        }
+      }
+
+      const billUpdate = { kot_status: overallKotStatus };
+      if (overallKotStatus === 'served') {
+        billUpdate.kot_served_at = now;
+        if (userId) billUpdate.kot_served_by = userId;
+      }
+      // Critical requirement: Keep payment and billing status (status) separate!
+      await Billing.update(billUpdate, { where: { id: kot.billing_id } });
+    }
+
+    return { kot, newKotStatus };
+  },
+
   // ✅ Get active kitchen queue & live table orders
   async getKitchenQueue(branchId, query = {}) {
     const onlyKitchen = query.only_kitchen === 'true' || query.only_kitchen === true;
@@ -734,7 +814,7 @@ const billingService = {
       const kots = await BillingKOT.findAll({
         where: {
           branch_id: branchId,
-          status: { [Op.in]: ['pending', 'preparing', 'ready'] }
+          status: { [Op.in]: ['pending', 'preparing', 'partially_ready', 'ready', 'partially_served'] }
         },
         include: [
           {
@@ -766,20 +846,31 @@ const billingService = {
           const item = kItem.billingItem;
           const unitPrice = parseFloat(item.unit_price || item.product?.selling_price || 0);
           const taxRate = parseFloat(item.tax || item.product?.tax_percentage || 0);
+          const totalQty = kItem.quantity || item.quantity || 1;
+          const servedQty = kItem.served_quantity || 0;
+
           return {
-            id: kItem.id, // return KOT item ID or Billing item ID? Frontend probably expects billing_item_id or just an id
+            id: kItem.id,
+            kot_item_id: kItem.id,
             billing_item_id: item.id,
             product_id: item.product_id || item.product?.id,
             product_name: item.product?.product_name || 'Unknown Item',
             image_url: item.product?.image_url || null,
-            quantity: item.quantity,
-            qty: item.quantity,
+            quantity: totalQty,
+            qty: totalQty,
+            served_quantity: servedQty,
+            status: kItem.status || 'pending',
+            is_served: servedQty >= totalQty || kItem.status === 'served',
+            kitchen_name: kot.kitchen_name,
+            kitchen_id: kot.kitchen_id,
+            kot_id: kot.id,
+            kot_number: kot.kot_number,
             unit_price: unitPrice,
             price: unitPrice,
             tax: parseFloat(item.tax || 0),
             tax_percentage: taxRate,
             tax_rate: taxRate,
-            total_price: parseFloat(item.total_price || (unitPrice * item.quantity)),
+            total_price: parseFloat(item.total_price || (unitPrice * totalQty)),
             size: item.size,
             color: item.color,
             barcode: item.barcode || item.product?.product_code,
@@ -797,10 +888,11 @@ const billingService = {
         });
 
         return {
-          id: kot.id, // frontend uses this for updating status
+          id: kot.id,
           billing_id: bill.id,
           billing_no: bill.billing_no,
           kitchen_name: kot.kitchen_name,
+          kitchen_id: kot.kitchen_id,
           kot_number: kot.kot_number,
           table_no: bill.counter_no ? bill.counter_no.replace('Counter ', 'Table ') : 'Walk-in',
           counter_no: bill.counter_no,
@@ -818,7 +910,7 @@ const billingService = {
         };
       });
     } else {
-      // For POS Table Management: Fetch from Billing (original logic)
+      // For POS Table Management & Waiter Pickup Queues: Fetch from Billing
       const rows = await Billing.findAll({
         where: {
           branch_id: branchId,
@@ -828,21 +920,36 @@ const billingService = {
         attributes: [
           'id', 'billing_no', 'counter_no', 'notes',
           'customer_name', 'customer_phone', 'subtotal_amount',
-          'tax_amount', 'discount_amount', 'total_amount', 'payment_method', 'status', 'createdAt'
+          'tax_amount', 'discount_amount', 'total_amount', 'payment_method', 'status', 'kot_status', 'createdAt'
         ],
         include: [
           {
             model: BillingKOT,
-            as: "kots"
+            as: "kots",
+            include: [{
+              model: BillingKOTItem,
+              as: "kotItems"
+            }]
           },
           {
             model: BillingItem,
             as: "items",
-            include: [{
+            include: [
+              {
                 model: Product,
                 as: "product",
                 attributes: ['id', 'product_name', 'product_code', 'image_url', 'selling_price', 'tax_percentage', 'unit']
-            }]
+              },
+              {
+                model: BillingKOTItem,
+                as: "kotItem",
+                include: [{
+                  model: BillingKOT,
+                  as: "kot",
+                  attributes: ['id', 'kitchen_name', 'kitchen_id', 'kot_number', 'status']
+                }]
+              }
+            ]
           }
         ],
         order: [['createdAt', 'ASC']]
@@ -850,31 +957,48 @@ const billingService = {
 
       return rows.map(bill => {
         // Aggregate KOT statuses for the bill
-        let overallKotStatus = null;
+        let overallKotStatus = bill.kot_status;
         if (bill.kots && bill.kots.length > 0) {
-           const statuses = bill.kots.map(k => k.status);
-           if (statuses.every(s => s === 'served')) overallKotStatus = 'served';
-           else if (statuses.every(s => s === 'ready' || s === 'served')) overallKotStatus = 'ready';
-           else if (statuses.includes('preparing')) overallKotStatus = 'preparing';
-           else overallKotStatus = 'pending';
+          const statuses = bill.kots.map(k => k.status);
+          if (statuses.every(s => s === 'served')) overallKotStatus = 'served';
+          else if (statuses.some(s => s === 'served' || s === 'partially_served')) overallKotStatus = 'partially_served';
+          else if (statuses.every(s => s === 'ready' || s === 'served')) overallKotStatus = 'ready';
+          else if (statuses.some(s => s === 'ready' || s === 'partially_ready')) overallKotStatus = 'partially_ready';
+          else if (statuses.some(s => s === 'preparing')) overallKotStatus = 'preparing';
+          else overallKotStatus = 'pending';
         }
 
         const formattedItems = bill.items.map(item => {
+          const kItem = item.kotItem;
+          const kName = kItem?.kot?.kitchen_name || 'Main Kitchen';
+          const totalQty = kItem?.quantity || item.quantity || 1;
+          const servedQty = kItem?.served_quantity || 0;
+          const itemStatus = kItem?.status || 'pending';
           const unitPrice = parseFloat(item.unit_price || item.product?.selling_price || 0);
           const taxRate = parseFloat(item.tax || item.product?.tax_percentage || 0);
+
           return {
             id: item.id,
+            billing_item_id: item.id,
+            kot_item_id: kItem?.id || null,
             product_id: item.product_id || item.product?.id,
             product_name: item.product?.product_name || 'Unknown Item',
             image_url: item.product?.image_url || null,
-            quantity: item.quantity,
-            qty: item.quantity,
+            quantity: totalQty,
+            qty: totalQty,
+            served_quantity: servedQty,
+            status: itemStatus,
+            is_served: servedQty >= totalQty || itemStatus === 'served',
+            kitchen_name: kName,
+            kitchen_id: kItem?.kot?.kitchen_id || null,
+            kot_id: kItem?.kot?.id || null,
+            kot_number: kItem?.kot?.kot_number || null,
             unit_price: unitPrice,
             price: unitPrice,
             tax: parseFloat(item.tax || 0),
             tax_percentage: taxRate,
             tax_rate: taxRate,
-            total_price: parseFloat(item.total_price || (unitPrice * item.quantity)),
+            total_price: parseFloat(item.total_price || (unitPrice * totalQty)),
             size: item.size,
             color: item.color,
             barcode: item.barcode || item.product?.product_code,
@@ -897,10 +1021,179 @@ const billingService = {
           status: bill.status,
           kot_status: overallKotStatus,
           notes: bill.notes,
+          kots: bill.kots || [],
           items: formattedItems
         };
       });
     }
+  },
+
+  // ✅ Mark an individual KOT item as served with quantity tracking (Waiter/Server)
+  async serveKOTItem({ itemId, servedQty = null, userId, branchId }) {
+    const kotItem = await BillingKOTItem.findByPk(itemId, {
+      include: [
+        {
+          model: BillingKOT,
+          as: 'kot',
+          include: [{ model: Billing, as: 'billing' }]
+        },
+        {
+          model: BillingItem,
+          as: 'billingItem',
+          include: [{ model: Product, as: 'product' }]
+        }
+      ]
+    });
+
+    if (!kotItem) {
+      throw new Error("KOT item record not found");
+    }
+
+    if (branchId && kotItem.kot?.branch_id !== branchId) {
+      throw new Error("Access denied: item belongs to another branch");
+    }
+
+    // 1. Preparation status validation: Cannot serve items that are still pending or cooking
+    const isReadyForServing =
+      kotItem.status === 'ready' ||
+      kotItem.status === 'partially_ready' ||
+      kotItem.status === 'partially_served' ||
+      kotItem.kot?.status === 'ready';
+
+    if (!isReadyForServing) {
+      const err = new Error(
+        `Cannot mark "${kotItem.billingItem?.product?.product_name || 'Item'}" as served because kitchen has not marked it ready (current status: ${kotItem.status}).`
+      );
+      err.statusCode = 400;
+      throw err;
+    }
+
+    const totalQty = kotItem.quantity || kotItem.billingItem?.quantity || 1;
+    const currentServed = kotItem.served_quantity || 0;
+
+    // 2. Idempotency: already fully served
+    if (currentServed >= totalQty && kotItem.status === 'served') {
+      return {
+        statusCode: 200,
+        success: true,
+        message: "Item is already fully served",
+        data: {
+          item_id: kotItem.id,
+          status: 'served',
+          served_quantity: totalQty,
+          quantity: totalQty,
+          kot_id: kotItem.kot_id,
+          is_served: true
+        }
+      };
+    }
+
+    let newServed = totalQty;
+    if (servedQty !== null && servedQty !== undefined) {
+      const inc = parseInt(servedQty, 10);
+      if (isNaN(inc) || inc <= 0) {
+        throw new Error("served_quantity increment must be a positive integer");
+      }
+      newServed = Math.min(totalQty, currentServed + inc);
+    }
+
+    const newStatus = newServed >= totalQty ? 'served' : 'partially_served';
+
+    // 3. Update the specific item atomically
+    await kotItem.update({
+      served_quantity: newServed,
+      status: newStatus
+    });
+
+    // 4. Recalculate parent KOT and overall Billing status
+    const { kot, newKotStatus } = await this.recalculateKotAndBillingStatus(kotItem.kot_id, userId);
+
+    return {
+      statusCode: 200,
+      success: true,
+      message: newStatus === 'served'
+        ? `${kotItem.billingItem?.product?.product_name || 'Item'} fully served (${newServed}/${totalQty})`
+        : `${kotItem.billingItem?.product?.product_name || 'Item'} partially served (${newServed}/${totalQty})`,
+      data: {
+        item_id: kotItem.id,
+        status: newStatus,
+        served_quantity: newServed,
+        quantity: totalQty,
+        is_served: newServed >= totalQty,
+        kot_id: kotItem.kot_id,
+        kot_status: newKotStatus,
+        billing_id: kot?.billing_id,
+        table_no: kot?.billing?.counter_no ? kot.billing.counter_no.replace('Counter ', 'Table ') : 'Table',
+        kitchen_name: kot?.kitchen_name || 'Main Kitchen',
+        product_name: kotItem.billingItem?.product?.product_name || 'Item'
+      }
+    };
+  },
+
+  // ✅ Update individual KOT item status (Kitchen preparation)
+  async updateKOTItemStatus({ itemId, newStatus, userId, branchId }) {
+    const kotItem = await BillingKOTItem.findByPk(itemId, {
+      include: [
+        {
+          model: BillingKOT,
+          as: 'kot',
+          include: [{ model: Billing, as: 'billing' }]
+        },
+        {
+          model: BillingItem,
+          as: 'billingItem',
+          include: [{ model: Product, as: 'product' }]
+        }
+      ]
+    });
+
+    if (!kotItem) {
+      throw new Error("KOT item not found");
+    }
+
+    if (branchId && kotItem.kot?.branch_id !== branchId) {
+      throw new Error("Access denied: item belongs to another branch");
+    }
+
+    const currentStatus = kotItem.status;
+    if (currentStatus === newStatus) {
+      return {
+        statusCode: 200,
+        success: true,
+        message: `Item status is already ${newStatus}`,
+        data: kotItem
+      };
+    }
+
+    const totalQty = kotItem.quantity || kotItem.billingItem?.quantity || 1;
+    const updatePayload = { status: newStatus };
+    if (newStatus === 'served') {
+      updatePayload.served_quantity = totalQty;
+    }
+
+    await kotItem.update(updatePayload);
+
+    // Recalculate parent KOT and overall Billing status
+    const { kot, newKotStatus } = await this.recalculateKotAndBillingStatus(kotItem.kot_id, userId);
+
+    return {
+      statusCode: 200,
+      success: true,
+      message: `Item status updated to ${newStatus}`,
+      data: {
+        item_id: kotItem.id,
+        status: newStatus,
+        served_quantity: updatePayload.served_quantity ?? kotItem.served_quantity,
+        quantity: totalQty,
+        is_served: (updatePayload.served_quantity ?? kotItem.served_quantity) >= totalQty,
+        kot_id: kotItem.kot_id,
+        kot_status: newKotStatus,
+        billing_id: kot?.billing_id,
+        table_no: kot?.billing?.counter_no ? kot.billing.counter_no.replace('Counter ', 'Table ') : 'Table',
+        kitchen_name: kot?.kitchen_name || 'Main Kitchen',
+        product_name: kotItem.billingItem?.product?.product_name || 'Item'
+      }
+    };
   },
 
   // ✅ Update KOT Status (atomic, concurrency check, idempotency)
@@ -929,8 +1222,10 @@ const billingService = {
     // 3. State Machine Transitions Validation
     const validTransitions = {
       'pending': ['preparing', 'cancelled'],
-      'preparing': ['ready', 'cancelled'],
-      'ready': ['served']
+      'preparing': ['ready', 'partially_ready', 'cancelled'],
+      'partially_ready': ['ready', 'served', 'partially_served', 'cancelled'],
+      'ready': ['served', 'partially_served', 'cancelled'],
+      'partially_served': ['served', 'ready']
     };
 
     const allowed = validTransitions[currentStatus] || [];
@@ -947,10 +1242,10 @@ const billingService = {
     if (newStatus === 'preparing') {
       updatePayload.preparing_at = now;
       updatePayload.preparing_by = userId;
-    } else if (newStatus === 'ready') {
+    } else if (newStatus === 'ready' || newStatus === 'partially_ready') {
       updatePayload.ready_at = now;
       updatePayload.ready_by = userId;
-    } else if (newStatus === 'served') {
+    } else if (newStatus === 'served' || newStatus === 'partially_served') {
       updatePayload.served_at = now;
       updatePayload.served_by = userId;
     } else if (newStatus === 'cancelled') {
@@ -970,8 +1265,17 @@ const billingService = {
 
     // 6. Concurrency Check
     if (affectedRows === 1) {
-      // Also update kotItems status
-      await BillingKOTItem.update({ status: newStatus }, { where: { kot_id: id } });
+      // If marking entire KOT as served, mark all items as served
+      if (newStatus === 'served') {
+        const kotItems = await BillingKOTItem.findAll({ where: { kot_id: id } });
+        for (const it of kotItems) {
+          await it.update({ status: 'served', served_quantity: it.quantity });
+        }
+      } else {
+        await BillingKOTItem.update({ status: newStatus }, { where: { kot_id: id } });
+      }
+
+      await this.recalculateKotAndBillingStatus(id, userId);
 
       const updatedKOT = await BillingKOT.findOne({ where: { id, branch_id: branchId } });
       return {

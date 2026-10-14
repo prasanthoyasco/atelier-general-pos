@@ -229,6 +229,62 @@ const billingController = {
       return res.status(500).json({ error: err.message });
     }
   },
+
+  // ✅ Mark an individual KOT line item as served (unit-by-unit or full line)
+  async serveKOTItem(req, res) {
+    try {
+      const { id } = req.params;
+      const { served_quantity } = req.body;
+
+      if (!req.branchContext || !req.branchContext.branchId) {
+        return res.status(400).json({ error: "Branch context required" });
+      }
+
+      const userId = req.user?.id;
+      const branchId = req.branchContext.branchId;
+
+      const result = await billingService.serveKOTItem({
+        itemId: id,
+        servedQty: served_quantity,
+        userId,
+        branchId,
+      });
+
+      return res.status(result.statusCode).json(result);
+    } catch (err) {
+      return res.status(400).json({ error: err.message });
+    }
+  },
+
+  // ✅ Update individual KOT line item status (Kitchen preparation)
+  async updateKOTItemStatus(req, res) {
+    try {
+      const { id } = req.params;
+      const { status } = req.body;
+
+      if (!status) {
+        return res.status(400).json({ error: "status is required" });
+      }
+
+      if (!req.branchContext || !req.branchContext.branchId) {
+        return res.status(400).json({ error: "Branch context required" });
+      }
+
+      const userId = req.user?.id;
+      const branchId = req.branchContext.branchId;
+
+      const result = await billingService.updateKOTItemStatus({
+        itemId: id,
+        newStatus: status,
+        userId,
+        branchId,
+      });
+
+      return res.status(result.statusCode).json(result);
+    } catch (err) {
+      return res.status(400).json({ error: err.message });
+    }
+  },
 };
 
 export default billingController;

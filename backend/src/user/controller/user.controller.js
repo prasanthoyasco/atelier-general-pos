@@ -117,7 +117,8 @@ const userController = {
       const result = await userService.loginUser(data);
       res.json({ message: "Login success", ...result });
     } catch (err) {
-      res.status(400).json({ error: err.message });
+      const errMsg = err?.message || err?.original?.message || err?.parent?.message || (typeof err === "string" ? err : "Invalid credentials or login failed");
+      res.status(400).json({ status: "error", message: errMsg, error: errMsg });
     }
   },
 

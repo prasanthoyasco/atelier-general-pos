@@ -15,8 +15,18 @@ const BillingKOTItem = sequelize.define("BillingKOTItem", {
         type: DataTypes.UUID,
         allowNull: false,
     },
+    quantity: {
+        type: DataTypes.INTEGER,
+        defaultValue: 1,
+        allowNull: false,
+    },
+    served_quantity: {
+        type: DataTypes.INTEGER,
+        defaultValue: 0,
+        allowNull: false,
+    },
     status: {
-        type: DataTypes.ENUM('pending', 'preparing', 'ready', 'served', 'cancelled'),
+        type: DataTypes.ENUM('pending', 'preparing', 'ready', 'partially_served', 'served', 'cancelled'),
         defaultValue: 'pending',
         allowNull: false,
     }
