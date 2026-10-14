@@ -50,7 +50,16 @@ app.use(helmet({
       scriptSrc: ["'self'"],
       scriptSrcAttr: ["'none'"],
       styleSrc: ["'self'", "https:", "'unsafe-inline'"],
-      connectSrc: ["'self'", "http://localhost:*", "http://127.0.0.1:*", "https://api.razorpay.com", "https://*.digitaloceanspaces.com", "https://*.amazonaws.com"],
+      connectSrc: [
+        "'self'",
+        "http://localhost:*",
+        "http://127.0.0.1:*",
+        "https://atelier-general-pos.vercel.app",
+        "https://atelier-general-pos.onrender.com",
+        "https://api.razorpay.com",
+        "https://*.digitaloceanspaces.com",
+        "https://*.amazonaws.com"
+      ],
       ...(process.env.NODE_ENV === 'production' ? { upgradeInsecureRequests: [] } : {})
     },
   },
@@ -68,15 +77,21 @@ const allowedOrigins = [
   'http://127.0.0.1:5173',
   'http://localhost:3000',
   'http://localhost:5174',
+  'https://atelier-general-pos.vercel.app',
   ...(process.env.FRONTEND_URL ? [process.env.FRONTEND_URL] : []),
   ...(process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',').map(s => s.trim()) : [])
-];
+].map(o => o.replace(/\/+$/, '').trim());
 
 app.use(cors({
   origin: (origin, callback) => {
     // Allow non-browser requests (e.g., mobile apps, curl, server-to-server) with no origin
     if (!origin) return callback(null, true);
-    if (allowedOrigins.includes(origin) || (process.env.NODE_ENV !== 'production' && /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin))) {
+    const cleanOrigin = origin.replace(/\/+$/, '').trim();
+    if (
+      allowedOrigins.includes(cleanOrigin) ||
+      /^https:\/\/atelier-general-pos(-[a-z0-9-]+)?\.vercel\.app$/.test(cleanOrigin) ||
+      (process.env.NODE_ENV !== 'production' && /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(cleanOrigin))
+    ) {
       return callback(null, true);
     }
     return callback(new Error(`CORS policy violation: origin ${origin} is not allowed`), false);
