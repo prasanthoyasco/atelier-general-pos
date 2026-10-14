@@ -1,10 +1,10 @@
-import app from '../src/index.js';
+import app from './src/index.js';
 import http from 'http';
 
 const server = http.createServer(app);
 server.listen(10002, async () => {
   try {
-    const res = await fetch('http://localhost:10002/api/data', {
+    const res = await fetch('https://atelier-general-pos.onrender.com/api/data', {
       method: 'OPTIONS',
       headers: {
         'Origin': 'https://atelier-general-pos.vercel.app',
@@ -19,7 +19,7 @@ server.listen(10002, async () => {
     console.log('Access-Control-Allow-Methods:', res.headers.get('access-control-allow-methods'));
     console.log('Access-Control-Allow-Headers:', res.headers.get('access-control-allow-headers'));
 
-    const getRes = await fetch('http://localhost:10002/api/data', {
+    const getRes = await fetch('https://atelier-general-pos.onrender.com/api/data', {
       method: 'GET',
       headers: {
         'Origin': 'https://atelier-general-pos.vercel.app'
