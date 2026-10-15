@@ -82,6 +82,7 @@ export default function WaiterPage() {
   const [selectedStationFilter, setSelectedStationFilter] = useState("All");
   const [selectedTablePickupFilter, setSelectedTablePickupFilter] = useState("All");
   const [servingItemId, setServingItemId] = useState(null);
+  const [pickupSubView, setPickupSubView] = useState("active"); // 'active' | 'history'
 
   // State: Catalogue & Order Taking
   const [products, setProducts] = useState([]);
@@ -264,6 +265,15 @@ export default function WaiterPage() {
     });
 
     return stats;
+  }, [kitchenOrders]);
+
+  // Separate active pickup queue from fully served completed orders
+  const activePickupOrders = useMemo(() => {
+    return kitchenOrders.filter((order) => order.kot_status !== "served");
+  }, [kitchenOrders]);
+
+  const servedHistoryOrders = useMemo(() => {
+    return kitchenOrders.filter((order) => order.kot_status === "served");
   }, [kitchenOrders]);
 
   // Categories list
@@ -1004,20 +1014,60 @@ export default function WaiterPage() {
         {/* ========================================================================= */}
         {activeTab === "pickup" && (
           <div className="p-3 max-w-4xl mx-auto space-y-3">
-            {/* Header Metrics Banner */}
-            <div className="p-3 bg-gradient-to-r from-emerald-600 to-teal-700 text-white rounded-2xl shadow-sm flex items-center justify-between">
-              <div>
-                <span className="text-[10px] font-black uppercase tracking-wider text-emerald-100 block">
-                  Kitchen Pickup Queue
+            {/* Active Queue vs Served History Segmented Control */}
+            <div className="flex bg-slate-100 p-1 rounded-2xl gap-1">
+              <button
+                type="button"
+                onClick={() => setPickupSubView("active")}
+                className={`flex-1 py-2.5 rounded-xl text-xs font-black transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                  pickupSubView === "active"
+                    ? "bg-white text-emerald-700 shadow-xs"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                <Bell size={13} className={queueStats.totalReadyItems > 0 ? "text-emerald-500 animate-bounce" : ""} />
+                <span>Active Pickup</span>
+                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+                  pickupSubView === "active" ? "bg-emerald-100 text-emerald-800" : "bg-slate-200 text-slate-700"
+                }`}>
+                  {activePickupOrders.length}
                 </span>
-                <h2 className="text-xl font-black mb-0 leading-tight">
-                  {queueStats.totalReadyItems} Items Ready to Serve
-                </h2>
-              </div>
-              <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center">
-                <Bell size={20} className={queueStats.totalReadyItems > 0 ? "animate-bounce" : ""} />
-              </div>
+              </button>
+              <button
+                type="button"
+                onClick={() => setPickupSubView("history")}
+                className={`flex-1 py-2.5 rounded-xl text-xs font-black transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                  pickupSubView === "history"
+                    ? "bg-white text-indigo-700 shadow-xs"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                <CheckCircle2 size={13} className="text-indigo-500" />
+                <span>Served History</span>
+                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+                  pickupSubView === "history" ? "bg-indigo-100 text-indigo-800" : "bg-slate-200 text-slate-700"
+                }`}>
+                  {servedHistoryOrders.length}
+                </span>
+              </button>
             </div>
+
+            {pickupSubView === "active" ? (
+              <>
+                {/* Header Metrics Banner */}
+                <div className="p-3 bg-gradient-to-r from-emerald-600 to-teal-700 text-white rounded-2xl shadow-sm flex items-center justify-between">
+                  <div>
+                    <span className="text-[10px] font-black uppercase tracking-wider text-emerald-100 block">
+                      Kitchen Pickup Queue
+                    </span>
+                    <h2 className="text-xl font-black mb-0 leading-tight">
+                      {queueStats.totalReadyItems} Items Ready to Serve
+                    </h2>
+                  </div>
+                  <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center">
+                    <Bell size={20} className={queueStats.totalReadyItems > 0 ? "animate-bounce" : ""} />
+                  </div>
+                </div>
 
             {/* Station Filter Pills */}
             <div className="space-y-1.5">
@@ -1084,7 +1134,7 @@ export default function WaiterPage() {
 
             {/* Active Orders List with Multi-Kitchen Item Breakdown */}
             <div className="space-y-3">
-              {kitchenOrders
+              {activePickupOrders
                 .filter((order) => {
                   const rawTNo = order.table_no || (order.counter_no ? order.counter_no.replace("Counter ", "Table ") : "");
                   const tNo = formatTableLabel(rawTNo);
@@ -1288,14 +1338,94 @@ export default function WaiterPage() {
                   );
                 })}
 
-              {kitchenOrders.length === 0 && (
+              {activePickupOrders.length === 0 && (
                 <div className="p-8 text-center bg-white rounded-2xl border border-slate-200">
                   <CheckCircle2 size={36} className="text-emerald-500 mx-auto mb-2" />
-                  <h4 className="text-sm font-bold text-slate-800 mb-0.5">All Orders Served</h4>
-                  <p className="text-xs text-slate-400 mb-0">No pending or ready items in the queue</p>
+                  <h4 className="text-sm font-bold text-slate-800 mb-0.5">All Active Orders Served</h4>
+                  <p className="text-xs text-slate-400 mb-3">No pending or ready items in the active queue.</p>
+                  {servedHistoryOrders.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setPickupSubView("history")}
+                      className="px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer transition border border-indigo-200/80"
+                    >
+                      <CheckCircle2 size={14} />
+                      <span>View Completed Order History ({servedHistoryOrders.length})</span>
+                    </button>
+                  )}
                 </div>
               )}
             </div>
+            </>
+          ) : (
+            /* ================= SERVED ORDER HISTORY VIEW ================= */
+            <div className="space-y-3">
+              <div className="p-3 bg-gradient-to-r from-indigo-700 to-slate-800 text-white rounded-2xl shadow-sm flex items-center justify-between">
+                <div>
+                  <span className="text-[10px] font-black uppercase tracking-wider text-indigo-200 block">
+                    Order History (Fully Served)
+                  </span>
+                  <h2 className="text-xl font-black mb-0 leading-tight">
+                    {servedHistoryOrders.length} Orders Completed
+                  </h2>
+                </div>
+                <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center">
+                  <CheckCircle2 size={22} className="text-emerald-400" />
+                </div>
+              </div>
+
+              {servedHistoryOrders.length === 0 ? (
+                <div className="p-8 text-center bg-white rounded-2xl border border-slate-200">
+                  <ClipboardList size={36} className="text-slate-300 mx-auto mb-2" />
+                  <h4 className="text-sm font-bold text-slate-800 mb-0.5">No Served History Yet</h4>
+                  <p className="text-xs text-slate-400 mb-0">Orders will automatically move here once all food items have been served.</p>
+                </div>
+              ) : (
+                servedHistoryOrders.map((order) => {
+                  const rawTNo = order.table_no || (order.counter_no ? order.counter_no.replace("Counter ", "Table ") : "Walk-in");
+                  const tNo = formatTableLabel(rawTNo);
+                  const isPaid = order.status === "paid";
+                  return (
+                    <div key={order.id} className="bg-white rounded-2xl border border-slate-200/90 shadow-xs overflow-hidden">
+                      <div className="p-3 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="px-2.5 py-1 rounded-xl bg-slate-900 !text-white font-black text-xs flex items-center gap-1.5 shadow-xs">
+                            <Table size={13} className="text-emerald-400 shrink-0" />
+                            <span>{tNo}</span>
+                          </span>
+                          <span className="text-xs font-bold text-slate-600">
+                            {order.kot_number ? `KOT #${order.kot_number}` : order.billing_no}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <Tag color="purple" className="font-bold text-[10px] m-0">Fully Served</Tag>
+                          <Tag color={isPaid ? "success" : "warning"} className="font-bold text-[10px] m-0">
+                            {isPaid ? "Paid" : "Awaiting Bill"}
+                          </Tag>
+                        </div>
+                      </div>
+                      <div className="divide-y divide-slate-100 p-2.5 space-y-1.5">
+                        {(order.items || []).map((it) => (
+                          <div key={it.kot_item_id || it.id} className="flex items-center justify-between text-xs py-1">
+                            <div className="flex items-center gap-2">
+                              <Check size={14} className="text-emerald-600 shrink-0" strokeWidth={3} />
+                              <span className="font-bold text-slate-800">{it.product_name}</span>
+                              <span className="px-1.5 py-0.5 rounded bg-indigo-50 border border-indigo-100 text-[9px] font-bold text-indigo-700">
+                                {it.kitchen_name || "Main Kitchen"}
+                              </span>
+                            </div>
+                            <span className="font-black text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md">
+                              × {it.served_quantity || it.quantity || 1} served
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          )}
           </div>
         )}
       </main>
@@ -1304,7 +1434,10 @@ export default function WaiterPage() {
       <Drawer
         title={
           <div className="flex items-center justify-between">
-            <span className="font-black text-sm">Order Review: {selectedTable?.table_no}</span>
+            <span className="font-black text-sm flex items-center gap-1.5">
+              <Table size={15} className="text-emerald-600 shrink-0" />
+              <span>Order Review: {formatTableLabel(selectedTable?.table_no)}</span>
+            </span>
             <span className="text-xs font-black text-emerald-600">{fmt(cartTotals.total)}</span>
           </div>
         }
@@ -1388,7 +1521,7 @@ export default function WaiterPage() {
             activeTab === "tables" ? "text-emerald-600 font-black" : "text-slate-400 font-bold"
           }`}
         >
-          <Armchair size={19} strokeWidth={activeTab === "tables" ? 2.5 : 2} />
+          <Table size={19} strokeWidth={activeTab === "tables" ? 2.5 : 2} />
           <span className="text-[10px]">Tables</span>
         </button>
 

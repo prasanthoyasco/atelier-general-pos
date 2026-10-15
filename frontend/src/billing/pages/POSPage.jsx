@@ -10,7 +10,8 @@ import {
   MoveLeft,
   ArrowLeft,
   Sparkles,
-  ChefHat
+  ChefHat,
+  Table
 } from "lucide-react";
 import { message, Drawer, Modal, Tag, Select, notification, Radio, Dropdown } from "antd";
 import productService from "../../Product/services/productService.js";
@@ -27,6 +28,17 @@ import dayjs from "dayjs";
 
 const fmt = (v) =>
   new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR" }).format(v || 0);
+
+// Helper to format table identifiers: "T1" -> "Table 1", "T2" -> "Table 2"
+const formatTableLabel = (val) => {
+  if (!val) return "Table 1";
+  const str = String(val).trim();
+  const matchT = str.match(/^T(\d+)$/i);
+  if (matchT) {
+    return `Table ${parseInt(matchT[1], 10)}`;
+  }
+  return str;
+};
 
 // Play custom order placed notification sound from public/order_placed_notification.mp3
 const playSoundAlert = () => {
@@ -222,7 +234,7 @@ export default function POSPage() {
         if (sorted.length > 0) {
           const currentExists = sorted.some((t) => t.id === selectedTableId || t.table_no === tableNo);
           if (!currentExists) {
-            setTableNo(sorted[0].table_no || sorted[0].table_name || "Table 1");
+            setTableNo(formatTableLabel(sorted[0].table_name || sorted[0].table_no || "Table 1"));
             setSelectedTableId(sorted[0].id);
           }
         }
@@ -841,7 +853,7 @@ export default function POSPage() {
         "Counter 1", "Counter 2", "Takeaway"
       ];
     }
-    const list = tables.map((t) => t.table_name || t.table_no).filter(Boolean);
+    const list = tables.map((t) => formatTableLabel(t.table_name || t.table_no)).filter(Boolean);
     return list.sort((a, b) =>
       a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" })
     );
@@ -851,13 +863,13 @@ export default function POSPage() {
   const activeTableMap = useMemo(() => {
     const map = {};
     kitchenOrders.forEach((order) => {
-      let tbl = order.table_no;
-      if (!tbl && order.counter_no) {
-        tbl = order.counter_no.startsWith("Counter ")
+      let rawTbl = order.table_no;
+      if (!rawTbl && order.counter_no) {
+        rawTbl = order.counter_no.startsWith("Counter ")
           ? order.counter_no.replace("Counter ", "Table ")
           : order.counter_no;
       }
-      if (!tbl) tbl = "Table 1";
+      const tbl = formatTableLabel(rawTbl || "Table 1");
       if (!map[tbl]) map[tbl] = [];
       map[tbl].push(order);
     });
@@ -873,8 +885,9 @@ export default function POSPage() {
 
   // Select Table from Grid / Modal
   const handleSelectTable = (tbl) => {
-    setTableNo(tbl);
-    const selectedTblObj = tables.find(t => t.table_name === tbl || t.table_no === tbl);
+    const formattedTbl = formatTableLabel(tbl);
+    setTableNo(formattedTbl);
+    const selectedTblObj = tables.find(t => formatTableLabel(t.table_name || t.table_no) === formattedTbl || t.table_name === tbl || t.table_no === tbl);
     setSelectedTableId(selectedTblObj ? selectedTblObj.id : null);
 
     const existingOrders = activeTableMap[tbl];
@@ -1343,9 +1356,11 @@ export default function POSPage() {
           <button
             onClick={() => navigate("/billing/list")}
             aria-label="Back to Billing List"
-            className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-slate-100 hover:bg-slate-200/80 flex items-center justify-center text-slate-700 transition cursor-pointer shrink-0"
+            title="Back to Orders List"
+            className="h-8 sm:h-10 px-2 sm:px-3 rounded-xl bg-slate-100 hover:bg-slate-200/80 flex items-center justify-center gap-1.5 text-slate-700 transition cursor-pointer shrink-0 border border-slate-200/80 shadow-2xs group"
           >
-            <ArrowLeft size={17} className="sm:w-5 sm:h-5" />
+            <ArrowLeft size={17} className="sm:w-5 sm:h-5 group-hover:-translate-x-0.5 transition-transform" />
+            <span className="hidden md:inline text-xs font-bold text-slate-700">Orders</span>
           </button>
 
           {/* Clickable Branch Switcher Dropdown */}
@@ -1389,8 +1404,8 @@ export default function POSPage() {
                 : "bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100"
             }`}
           >
-            <Armchair size={13} className={activeTablesCount > 0 ? "text-amber-600 shrink-0" : "text-slate-500 shrink-0"} />
-            <span className="truncate max-w-[42px] sm:max-w-none text-[11px] sm:text-xs md:text-sm">{tableNo}</span>
+            <Table size={13} className={activeTablesCount > 0 ? "text-amber-600 shrink-0" : "text-slate-500 shrink-0"} />
+            <span className="truncate max-w-[55px] sm:max-w-none text-[11px] sm:text-xs md:text-sm">{formatTableLabel(tableNo)}</span>
             {activeTablesCount > 0 && (
               <span className="px-1 py-0.2 sm:px-1.5 sm:py-0.5 rounded-full bg-amber-500 text-white text-[8px] sm:text-[9px] font-black leading-none animate-pulse">
                 {activeTablesCount}
@@ -1448,8 +1463,8 @@ export default function POSPage() {
                 onClick={() => setTablesModalOpen(true)}
                 className="px-2.5 py-1 bg-white border border-slate-200 rounded-lg text-xs font-black text-slate-800 flex items-center gap-1.5 hover:bg-slate-50 cursor-pointer shadow-sm"
               >
-                <Armchair size={14} className="text-blue-600 shrink-0" />
-                <span className="truncate">{tableNo}</span>
+                <Table size={14} className="text-blue-600 shrink-0" />
+                <span className="truncate">{formatTableLabel(tableNo)}</span>
                 <ChevronDown size={12} className="text-slate-400" />
               </button>
 
@@ -2264,8 +2279,9 @@ export default function POSPage() {
                         <span className="font-black text-slate-900 text-sm">
                           {order.kot_number ? `KOT #${order.kot_number}` : order.billing_no}
                         </span>
-                        <span className="font-bold text-xs bg-white px-2 py-0.5 rounded-md border border-slate-200 text-slate-700">
-                          {order.table_no || "Counter"}
+                        <span className="font-bold text-xs bg-white px-2 py-0.5 rounded-md border border-slate-200 text-slate-700 flex items-center gap-1">
+                          <Table size={12} className="text-slate-500 shrink-0" />
+                          <span>{formatTableLabel(order.table_no) || "Counter"}</span>
                         </span>
                       </div>
 
@@ -2634,7 +2650,7 @@ export default function POSPage() {
                   <div className="space-y-1.5">
                     <div className="flex items-center justify-between">
                       <span className="font-black text-sm text-slate-900 flex items-center gap-1.5">
-                        <Armchair
+                        <Table
                           size={15}
                           className={
                             isOccupied
@@ -2652,7 +2668,7 @@ export default function POSPage() {
                               : "text-slate-400"
                           }
                         />
-                        {tbl}
+                        {formatTableLabel(tbl)}
                       </span>
                       {isOccupied ? (
                         <Tag

@@ -385,6 +385,30 @@ const billingService = {
     if (filters.payment_method) {
       where.payment_method = filters.payment_method;
     }
+    if (filters.created_by) {
+      let kotBillIds = [];
+      try {
+        const matchingKots = await BillingKOT.findAll({
+          where: { served_by: filters.created_by },
+          attributes: ['billing_id'],
+          raw: true,
+        });
+        kotBillIds = matchingKots.map(k => k.billing_id).filter(Boolean);
+      } catch (err) {
+        console.warn("Could not query BillingKOT by served_by:", err.message);
+      }
+
+      where[Op.and] = [
+        ...(where[Op.and] || []),
+        {
+          [Op.or]: [
+            { created_by: filters.created_by },
+            { kot_served_by: filters.created_by },
+            ...(kotBillIds.length > 0 ? [{ id: { [Op.in]: kotBillIds } }] : [])
+          ]
+        }
+      ];
+    }
 
     if (filters.period || (filters.startDate && filters.endDate)) {
       const now = new Date();
@@ -1199,11 +1223,87 @@ const billingService = {
   // ✅ Update KOT Status (atomic, concurrency check, idempotency)
   async updateKOTStatus({ id, newStatus, userId, branchId, cancelReason = null }) {
     // 1. Fetch current status from BillingKOT
-    const kot = await BillingKOT.findOne({
+    let kot = await BillingKOT.findOne({
       where: { id, branch_id: branchId }
     });
 
+    // 1b. If not found in BillingKOT, check if `id` is a parent Billing order ID (e.g. from POS / Waiter interface)
     if (!kot) {
+      const bill = await Billing.findOne({
+        where: { id, branch_id: branchId }
+      });
+
+      if (bill) {
+        // Find all KOTs belonging to this billing order
+        const relatedKots = await BillingKOT.findAll({
+          where: { billing_id: id, branch_id: branchId }
+        });
+
+        const now = new Date();
+
+        if (relatedKots.length === 0) {
+          await bill.update({ kot_status: newStatus });
+          return {
+            statusCode: 200,
+            success: true,
+            message: `Order status updated to ${newStatus}`,
+            data: bill
+          };
+        }
+
+        // For each related KOT, update its status and all its items
+        for (const rKot of relatedKots) {
+          const updatePayload = { status: newStatus };
+          if (newStatus === 'preparing') {
+            updatePayload.preparing_at = now;
+            updatePayload.preparing_by = userId;
+          } else if (newStatus === 'ready' || newStatus === 'partially_ready') {
+            updatePayload.ready_at = now;
+            updatePayload.ready_by = userId;
+          } else if (newStatus === 'served' || newStatus === 'partially_served') {
+            updatePayload.served_at = now;
+            updatePayload.served_by = userId;
+          } else if (newStatus === 'cancelled') {
+            updatePayload.cancelled_at = now;
+            updatePayload.cancelled_by = userId;
+            updatePayload.cancel_reason = cancelReason;
+          }
+          await rKot.update(updatePayload);
+
+          if (newStatus === 'served') {
+            const kotItems = await BillingKOTItem.findAll({ where: { kot_id: rKot.id } });
+            for (const it of kotItems) {
+              const totalQty = it.quantity || 1;
+              await it.update({ status: 'served', served_quantity: totalQty });
+            }
+          } else {
+            await BillingKOTItem.update({ status: newStatus }, { where: { kot_id: rKot.id } });
+          }
+
+          await this.recalculateKotAndBillingStatus(rKot.id, userId);
+        }
+
+        // Ensure bill kot_status reflects newStatus
+        const billUpdates = { kot_status: newStatus };
+        if (newStatus === 'served') {
+          billUpdates.kot_served_at = now;
+          if (userId) billUpdates.kot_served_by = userId;
+        }
+        await bill.update(billUpdates);
+
+        const reloadedBill = await Billing.findOne({
+          where: { id, branch_id: branchId },
+          include: [{ model: BillingKOT, as: "kots" }]
+        });
+
+        return {
+          statusCode: 200,
+          success: true,
+          message: `Entire table order marked as ${newStatus}`,
+          data: reloadedBill
+        };
+      }
+
       throw new Error("KOT not found");
     }
 

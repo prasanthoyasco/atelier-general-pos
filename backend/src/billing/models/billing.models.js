@@ -66,6 +66,8 @@ const Billing = sequelize.define("Billing", {
   kot_cancel_reason: { type: DataTypes.STRING(255), allowNull: true },
   notes: { type: DataTypes.TEXT, allowNull: true },
   source: { type: DataTypes.STRING(50), allowNull: true, comment: 'Customer acquisition source at time of billing' },
+  created_by: { type: DataTypes.UUID, allowNull: true },
+  created_by_name: { type: DataTypes.STRING(100), allowNull: true },
   is_active: { type: DataTypes.BOOLEAN, defaultValue: true },
 }, {
   tableName: "billing",

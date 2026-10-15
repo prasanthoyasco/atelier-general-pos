@@ -30,8 +30,14 @@ const ProtectedRoute = ({ children, allowedRoles = [] }) => {
     }
 
     // For non-admin users, check if their role is in allowedRoles
-    const resolvedRoleName = user.role?.role_name || user.role_name;
-    if (allowedRoles.length > 0 && (!resolvedRoleName || !allowedRoles.includes(resolvedRoleName))) {
+    const lowerAllowed = allowedRoles.map(r => (r || '').toLowerCase());
+    if (allowedRoles.length > 0 && (!userRole || !lowerAllowed.includes(userRole))) {
+        if (userRole === 'order taker' || userRole === 'waiter') {
+            return <Navigate to="/billing/list" replace />;
+        }
+        if (userRole === 'kitchen') {
+            return <Navigate to="/billing/kitchen" replace />;
+        }
         return <Navigate to="/unauthorized" replace />;
     }
 

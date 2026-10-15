@@ -42,7 +42,8 @@ import billingService from "../service/billingService.js";
 import { useBranch } from "../../context/BranchContext";
 import debounce from "lodash.debounce";
 import { TableSkeleton, POSCatalogueSkeleton } from "../../components/SkeletonLoader.jsx";
-import { Check } from "lucide-react";
+import { Check, Receipt, MonitorSmartphone, UtensilsCrossed, Table as TableIcon } from "lucide-react";
+import { useAuth } from "../../context/AuthContext.jsx";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 
@@ -116,6 +117,9 @@ function getTypeLabel(type = "") {
 function BillingList() {
   const navigate = useNavigate();
   const { selectedBranch: contextBranch } = useBranch();
+  const { user } = useAuth() || {};
+  const userRole = (user?.role?.role_name || user?.role_name || "").toLowerCase().replace(/_/g, " ");
+  const isOrderTaker = userRole === "order taker" || userRole === "waiter";
 
   const [billings, setBillings] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -160,6 +164,10 @@ function BillingList() {
           sortOrder: params.sortOrder ?? sorter.order,
         };
 
+        if (isOrderTaker && user?.id) {
+          req.created_by = user.id;
+        }
+
         const effectiveStatus = params.status ?? statusFilter;
         if (effectiveStatus && effectiveStatus !== "all") req.status = effectiveStatus;
 
@@ -196,7 +204,7 @@ function BillingList() {
         setLoading(false);
       }
     },
-    [pagination.current, pagination.pageSize, searchText, sorter, statusFilter, typeFilter, paymentFilter, period, dateRange]
+    [pagination.current, pagination.pageSize, searchText, sorter, statusFilter, typeFilter, paymentFilter, period, dateRange, isOrderTaker, user?.id]
   );
 
   const doSearch = debounce((value) => {
@@ -369,6 +377,23 @@ function BillingList() {
 
   const columns = [
     { title: "Billing No", dataIndex: "billing_no", key: "billing_no", width: 100, sorter: true, render: (val) => val ? val.replace("BILL-", "") : "" },
+    {
+      title: "Table / Counter",
+      dataIndex: "counter_no",
+      key: "counter_no",
+      width: 125,
+      render: (val, record) => {
+        const raw = val || record.table_no;
+        if (!raw) return <span className="text-slate-400 text-xs">Direct</span>;
+        const label = raw.startsWith("Counter ") ? raw.replace("Counter ", "Table ") : raw;
+        return (
+          <span className="font-bold text-xs text-slate-700 inline-flex items-center gap-1.5 bg-slate-100 border border-slate-200/80 px-2 py-0.5 rounded-lg">
+            <TableIcon size={12} className="text-blue-600 shrink-0" />
+            <span>{label}</span>
+          </span>
+        );
+      },
+    },
     { title: "Customer", dataIndex: "customer_name", key: "customer_name", width: 150, sorter: true },
     {
       title: "Billing Date",
@@ -452,7 +477,45 @@ function BillingList() {
 
   return (
     <div className="p-3 sm:p-4 lg:p-6 pb-28 md:pb-6 relative min-h-screen">
-      {/* Filters + Controls */}
+      {/* If Order Taker, show specialized My Orders banner */}
+      {isOrderTaker && (
+        <div className="mb-4 p-3.5 sm:p-4 bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-emerald-500/5 border border-emerald-200 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-bold shadow-xs shrink-0">
+              <Receipt size={20} />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-base font-black text-slate-800 mb-0">My Taken & Served Orders</h2>
+                <Tag color="emerald" className="font-bold text-[10px] m-0 uppercase tracking-wider">
+                  {userRole}
+                </Tag>
+              </div>
+              <p className="text-xs text-slate-500 mb-0">
+                Showing orders created or served by <span className="font-bold text-emerald-700">{user?.username || "You"}</span>
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <Button
+              type="primary"
+              icon={<MonitorSmartphone size={15} />}
+              onClick={() => navigate("/billing/pos")}
+              className="!bg-emerald-600 hover:!bg-emerald-700 flex-1 sm:flex-none font-bold text-xs h-9 flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
+            >
+              POS Terminal
+            </Button>
+            <Button
+              icon={<UtensilsCrossed size={15} />}
+              onClick={() => navigate("/billing/waiter")}
+              className="flex-1 sm:flex-none font-bold text-xs h-9 flex items-center justify-center gap-1.5 border-teal-300 text-teal-700 hover:bg-teal-50 cursor-pointer shadow-sm"
+            >
+              Waiter Service
+            </Button>
+          </div>
+        </div>
+      )}
+
       {/* Filters + Controls */}
       <div className="flex flex-col justify-between items-start gap-4 mb-4">
         {/* Left Side: Tabs */}
@@ -726,7 +789,15 @@ function BillingList() {
                           <div style={cardStyles.avatarSquare("#0ea5a4")}>{initials}</div>
                           <div>
                             <div style={{ fontWeight: 700, fontSize: 14, textTransform: "capitalize", color: "#1f2937" }}>{item.customer_name}</div>
-                            <div style={{ ...cardStyles.smallMeta, fontSize: 9.5 }}><strong>Bill No:</strong> <span style={{ fontFamily: "monospace" }}>{item.billing_no ? item.billing_no.replace("BILL-", "") : ""}</span></div>
+                            <div style={{ ...cardStyles.smallMeta, fontSize: 9.5, display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}>
+                              <span><strong>Bill No:</strong> <span style={{ fontFamily: "monospace" }}>{item.billing_no ? item.billing_no.replace("BILL-", "") : ""}</span></span>
+                              {item.counter_no && (
+                                <span style={{ display: "inline-flex", alignItems: "center", gap: 2, background: "#f1f5f9", border: "1px solid #e2e8f0", padding: "1px 5px", borderRadius: 4, fontWeight: 700, fontSize: 9, color: "#334155" }}>
+                                  <TableIcon size={10} className="text-blue-600" />
+                                  {item.counter_no.startsWith("Counter ") ? item.counter_no.replace("Counter ", "Table ") : item.counter_no}
+                                </span>
+                              )}
+                            </div>
                             {/* Payment method below name */}
                             {isSplit ? (
                               <Tooltip title="Click to see split details">

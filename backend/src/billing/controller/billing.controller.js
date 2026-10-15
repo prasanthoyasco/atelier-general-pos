@@ -53,6 +53,14 @@ const billingController = {
         }
       }
 
+      // For order taker and waiter roles, strictly restrict to bills created or served by them
+      const userRole = (req.user?.role_name || req.branchContext?.roleName || '').toLowerCase().replace(/_/g, ' ');
+      if (userRole === 'order taker' || userRole === 'waiter') {
+        filters.created_by = req.user.id;
+      } else if (req.query.created_by) {
+        filters.created_by = req.query.created_by;
+      }
+
       page = parseInt(page, 10);
       limit = parseInt(limit, 10);
       const offset = (page - 1) * limit;

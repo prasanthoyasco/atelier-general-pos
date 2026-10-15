@@ -21,7 +21,8 @@ import {
   Utensils,
   MonitorSmartphone,
   List,
-  UtensilsCrossed
+  UtensilsCrossed,
+  Receipt
 } from "lucide-react";
 import CustomerBillCopy from "./billing/pages/CustomerBillCopy";
 import CustomerBillForm from "./billing/pages/CustomerBillingForm";
@@ -166,6 +167,12 @@ function AppInner() {
           key: "/billing/pos",
           label: "POS Terminal",
           icon: <MonitorSmartphone size={20} />,
+          children: null
+        },
+        {
+          key: "/billing/list",
+          label: "My Orders",
+          icon: <Receipt size={20} />,
           children: null
         }
       ];
@@ -340,17 +347,23 @@ function AppInner() {
         {/* Default redirect */}
         <Route path="/" element={<Navigate to={getDefaultRedirect()} replace />} />
 
-        {modules.map(({ name, path, element: Element }) => (
-          <Route
-            key={name}
-            path={path}
-            element={
-              <ProtectedRoute>
-                <Element />
-              </ProtectedRoute>
-            }
-          />
-        ))}
+        {modules.map(({ name, path, element: Element }) => {
+          const allowedRoles = name === 'dashboard'
+            ? ['admin', 'super admin', 'cluster admin', 'branch admin', 'manager']
+            : undefined;
+
+          return (
+            <Route
+              key={name}
+              path={path}
+              element={
+                <ProtectedRoute allowedRoles={allowedRoles}>
+                  <Element />
+                </ProtectedRoute>
+              }
+            />
+          );
+        })}
         <Route
           path="/employee-dashboard"
           element={
