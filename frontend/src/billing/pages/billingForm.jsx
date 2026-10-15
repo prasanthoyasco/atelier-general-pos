@@ -24,7 +24,7 @@ import {
 } from "antd";
 import { CheckCircleOutlined, GiftOutlined, DeleteOutlined, PlusOutlined, EditOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
-import productService from "../../Product/services/productService";
+import productService from "../../product/services/productService";
 import billingService from "../service/billingService";
 import localPrintService from "../service/localPrintService";
 import { getReceiptProfile } from "../service/receiptSettings";

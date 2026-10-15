@@ -94,7 +94,7 @@ const SubCategoryList = () => {
             <Button
               type="primary"
               icon={<EditOutlined />}
-              onClick={() => navigate(`/Product/subcategories/edit/${record.id}`)}
+              onClick={() => navigate(`/product/subcategories/edit/${record.id}`)}
             >
               Edit
             </Button>
@@ -118,7 +118,7 @@ const SubCategoryList = () => {
           allowClear
           className="w-full md:w-[300px]"
         />
-        <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate("/Product/subcategories/add")} className="w-full md:w-auto">
+        <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate("/product/subcategories/add")} className="w-full md:w-auto">
           Add Subcategory
         </Button>
       </div>
@@ -139,7 +139,7 @@ const SubCategoryList = () => {
                   <Button
                     type="text"
                     icon={<EditOutlined />}
-                    onClick={() => navigate(`/Product/subcategories/edit/${item.id}`)}
+                    onClick={() => navigate(`/product/subcategories/edit/${item.id}`)}
                   />
                 }
               >

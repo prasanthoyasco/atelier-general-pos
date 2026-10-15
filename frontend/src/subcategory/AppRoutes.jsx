@@ -1,6 +1,6 @@
 import { Routes, Route } from "react-router-dom";
-import SubcategoryList from "../Product/pages/SubcategoryList";
-import SubcategoryForm from "../Product/pages/SubcategoryForm";
+import SubcategoryList from "../product/pages/SubcategoryList";
+import SubcategoryForm from "../product/pages/SubcategoryForm";
 import { List, PlusCircle } from "lucide-react";
 
 // Sidebar menu items for Subcategory

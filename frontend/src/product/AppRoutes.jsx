@@ -9,33 +9,34 @@ import SubcategoryForm from "./pages/SubcategoryForm";
 import AddonList from "./pages/AddonList";
 import { List, Tags, Layers, Upload, Sparkles } from "lucide-react";
 
-export const ProductMenuItems = [
+export const productMenuItems = [
   {
-    key: "/Product/list",
+    key: "/product/list",
     label: "Products",
     icon: <List size={18} />,
   },
   {
-    key: "/Product/addons",
+    key: "/product/addons",
     label: "Add-ons",
     icon: <Sparkles size={18} />,
   },
   {
-    key: "/Product/bulk-upload",
+    key: "/product/bulk-upload",
     label: "Bulk Upload",
     icon: <Upload size={18} />,
   },
   {
-    key: "/Product/categories",
+    key: "/product/categories",
     label: "Categories",
     icon: <Tags size={18} />,
   },
   {
-    key: "/Product/subcategories",
+    key: "/product/subcategories",
     label: "Subcategories",
     icon: <Layers size={18} />,
   },
 ];
+export const ProductMenuItems = productMenuItems;
 
 const ProductRoutes = () => {
   return (

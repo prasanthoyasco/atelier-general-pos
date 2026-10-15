@@ -447,7 +447,7 @@ const ProductForm = () => {
         messageApi.success("Product created successfully");
       }
 
-      navigate("/Product/list");
+      navigate("/product/list");
     } catch (err) {
       console.error("Save error:", err);
       const resp = err?.response?.data;

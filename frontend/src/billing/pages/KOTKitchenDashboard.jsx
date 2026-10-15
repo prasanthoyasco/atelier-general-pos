@@ -6,7 +6,7 @@ import {
 } from "lucide-react";
 import { message, Modal, Input, Select, Tag } from "antd";
 import billingService from "../service/billingService.js";
-import productService from "../../Product/services/productService.js";
+import productService from "../../product/services/productService.js";
 import { useBranch } from "../../context/BranchContext.jsx";
 import FoodThumbnail from "../utils/FoodThumbnail.jsx";
 import { broadcastKOTEvent, kotChannel } from "../utils/kotBroadcast.js";

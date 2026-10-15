@@ -8,7 +8,7 @@ import {
   Coffee, Utensils, Table
 } from "lucide-react";
 import { message, Drawer, Modal, Tag, Dropdown, notification } from "antd";
-import productService from "../../Product/services/productService.js";
+import productService from "../../product/services/productService.js";
 import billingService from "../service/billingService.js";
 import tableService from "../service/tableService.js";
 import { useAuth } from "../../context/AuthContext.jsx";

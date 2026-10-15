@@ -120,7 +120,7 @@ const SubcategoryForm = () => {
     form.setFieldValue('description', value);
   };
 
-  const onCancel = () => navigate("/Product/subcategories");
+  const onCancel = () => navigate("/product/subcategories");
 
   const handleSubmit = async (values) => {
     // Normalize payload
@@ -154,7 +154,7 @@ const SubcategoryForm = () => {
 
       // show brief success page then redirect
       setSaved(true);
-      setTimeout(() => navigate("/Product/subcategories"), 1000);
+      setTimeout(() => navigate("/product/subcategories"), 1000);
     } catch (err) {
       console.error("Submit error:", err);
       const resp = err?.response?.data;

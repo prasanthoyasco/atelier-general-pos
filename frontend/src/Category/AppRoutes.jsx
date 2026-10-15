@@ -1,8 +1,8 @@
 import { Routes, Route } from "react-router-dom";
-import CategoryList from "../Product/pages/CategoryList";
-import CategoryAdd from "../Product/pages/CategoryAdd";
-import SubcategoryList from "../Product/pages/SubcategoryList";
-import SubcategoryForm from "../Product/pages/SubcategoryForm";
+import CategoryList from "../product/pages/CategoryList";
+import CategoryAdd from "../product/pages/CategoryAdd";
+import SubcategoryList from "../product/pages/SubcategoryList";
+import SubcategoryForm from "../product/pages/SubcategoryForm";
 import { Tags, Layers } from "lucide-react";
 
 export const CategoryMenuItems = [

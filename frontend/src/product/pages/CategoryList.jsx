@@ -74,7 +74,7 @@ const CategoryList = () => {
         <>
           {contextHolder}
           <Space>
-            <Button type="primary" icon={<EditOutlined />} onClick={() => navigate(`/Product/categories/edit/${record.id}`)}>
+            <Button type="primary" icon={<EditOutlined />} onClick={() => navigate(`/product/categories/edit/${record.id}`)}>
               Edit
             </Button>
             <Popconfirm title="Are you sure you want to delete this category?" onConfirm={() => handleDelete(record.id)} okText="Yes" cancelText="No">
@@ -97,7 +97,7 @@ const CategoryList = () => {
           allowClear
           className="w-full md:w-[300px]"
         />
-        <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate("/Product/categories/add")} className="w-full md:w-auto">
+        <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate("/product/categories/add")} className="w-full md:w-auto">
           Add Category
         </Button>
       </div>
@@ -119,7 +119,7 @@ const CategoryList = () => {
                     <Button
                       type="text"
                       icon={<EditOutlined />}
-                      onClick={() => navigate(`/Product/categories/edit/${item.id}`)}
+                      onClick={() => navigate(`/product/categories/edit/${item.id}`)}
                     />
                     <Popconfirm title="Are you sure you want to delete this category?" onConfirm={() => handleDelete(item.id)} okText="Yes" cancelText="No">
                       <Button type="text" danger icon={<DeleteOutlined />} />

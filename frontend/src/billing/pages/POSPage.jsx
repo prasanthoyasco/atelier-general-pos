@@ -14,7 +14,7 @@ import {
   Table
 } from "lucide-react";
 import { message, Drawer, Modal, Tag, Select, notification, Radio, Dropdown } from "antd";
-import productService from "../../Product/services/productService.js";
+import productService from "../../product/services/productService.js";
 import customerService from "../../customer/service/customerService.js";
 import billingService from "../service/billingService.js";
 import localPrintService from "../service/localPrintService.js";

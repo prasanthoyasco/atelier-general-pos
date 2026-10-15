@@ -81,7 +81,7 @@ const [messageApi, contextHolder] = message.useMessage();
       // show success Result briefly before redirecting
       setSaved(true);
       setTimeout(() => {
-        navigate("/Product/categories");
+        navigate("/product/categories");
       }, 1100);
     } catch (err) {
       console.error("Error details:", err?.response?.data ?? err?.message ?? err);
@@ -98,7 +98,7 @@ const [messageApi, contextHolder] = message.useMessage();
   };
 
   // Cancel/back
-  const onCancel = () => navigate("/Product/categories");
+  const onCancel = () => navigate("/product/categories");
 
   // Character counter for description
   const onDescriptionChange = (e) => {

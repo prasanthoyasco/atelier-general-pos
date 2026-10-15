@@ -22,7 +22,7 @@ import {
   Alert,
 } from "antd";
 import inwardService from "../service/inwardService";
-import productService from "../../Product/services/productService";
+import productService from "../../product/services/productService";
 import { useBranch } from "../../context/BranchContext";
 import dayjs from "dayjs";
 

@@ -303,7 +303,7 @@ const ProductList = () => {
           <>
             {contextHolder}
             <Space>
-              <Button type="primary" icon={<EditOutlined />} onClick={() => navigate(`/Product/edit/${record.id}`)}>
+              <Button type="primary" icon={<EditOutlined />} onClick={() => navigate(`/product/edit/${record.id}`)}>
                 Edit
               </Button>
               <Popconfirm title="Are you sure you want to delete this product?" onConfirm={() => handleDelete(record.id)} okText="Yes" cancelText="No">
@@ -333,17 +333,17 @@ const ProductList = () => {
           className="w-full sm:w-auto"
           style={{ flex: "1 1 200px", minWidth: 160 }}
         />
-        <Button 
-          type="primary" 
-          icon={<PlusOutlined />} 
-          onClick={() => navigate("/Product/add")}
+        <Button
+          type="primary"
+          icon={<PlusOutlined />}
+          onClick={() => navigate("/product/add")}
           className="min-h-[40px] rounded-xl font-semibold hidden sm:inline-flex items-center"
         >
           Add Product
         </Button>
-        <Button 
-          type="default" 
-          icon={<DownloadOutlined />} 
+        <Button
+          type="default"
+          icon={<DownloadOutlined />}
           onClick={downloadAllQRPDF}
           className="min-h-[40px] rounded-xl font-semibold"
         >
@@ -388,17 +388,17 @@ const ProductList = () => {
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
                       <button
-                        onClick={() => navigate(`/Product/edit/${item.id}`)}
+                        onClick={() => navigate(`/product/edit/${item.id}`)}
                         className="w-10 h-10 rounded-xl bg-slate-50 hover:bg-indigo-50 text-slate-600 hover:text-indigo-600 flex items-center justify-center transition active:scale-95 cursor-pointer"
                         aria-label="Edit product"
                       >
                         <EditOutlined style={{ fontSize: 16 }} />
                       </button>
-                      <Popconfirm 
-                        title="Delete product?" 
+                      <Popconfirm
+                        title="Delete product?"
                         description="Are you sure you want to delete this product?"
-                        onConfirm={() => handleDelete(item.id)} 
-                        okText="Yes" 
+                        onConfirm={() => handleDelete(item.id)}
+                        okText="Yes"
                         cancelText="No"
                       >
                         <button
@@ -490,7 +490,7 @@ const ProductList = () => {
 
       {/* Mobile Floating Action Button (FAB) */}
       <button
-        onClick={() => navigate("/Product/add")}
+        onClick={() => navigate("/product/add")}
         aria-label="Add Product"
         className="fixed bottom-24 right-5 md:hidden z-30 w-14 h-14 bg-indigo-600 hover:bg-indigo-700 active:scale-95 !text-white rounded-full shadow-2xl flex items-center justify-center cursor-pointer transition shadow-indigo-600/30"
       >

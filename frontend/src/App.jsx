@@ -57,6 +57,7 @@ const moduleIcons = {
   dashboard: <LayoutDashboard size={20} />,
   billing: <IndianRupee size={20} />,
   Product: <Box size={20} />,
+  product: <Box size={20} />,
   Category: <Tags size={20} />,
   subcategory: <Layers size={20} />,
   inward: <ShoppingCart size={20} />,

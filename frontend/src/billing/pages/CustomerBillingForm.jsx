@@ -18,7 +18,7 @@ import {
   Modal,
 } from "antd";
 import BillingService from "../service/billingService";
-import ProductService from "../../Product/services/productService";
+import ProductService from "../../product/services/productService";
 import dayjs from "dayjs";
 import BarcodeScannerComponent from "react-qr-barcode-scanner";
 

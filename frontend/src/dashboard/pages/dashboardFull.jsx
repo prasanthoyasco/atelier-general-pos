@@ -796,7 +796,7 @@ const DashboardFull = () => {
                   </span>
                 )}
               </div>
-              <button onClick={() => navigate('/Product/list')} className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800">View All</button>
+              <button onClick={() => navigate('/product/list')} className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800">View All</button>
             </div>
 
             <div className="space-y-3.5">
@@ -853,7 +853,7 @@ const DashboardFull = () => {
           <div>
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-sm font-bold text-slate-600">Inventory Status</h3>
-              <button onClick={() => navigate('/Product/list')} className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800">View All</button>
+              <button onClick={() => navigate('/product/list')} className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800">View All</button>
             </div>
 
             <div className="space-y-3.5">
@@ -893,7 +893,7 @@ const DashboardFull = () => {
           </div>
 
           <button
-            onClick={() => navigate('/Product/list')}
+            onClick={() => navigate('/product/list')}
             className="w-full mt-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 rounded-xl text-sm font-bold tracking-wide transition-colors"
           >
             Reorder Now
