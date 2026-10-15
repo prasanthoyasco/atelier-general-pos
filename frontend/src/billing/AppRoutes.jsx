@@ -13,6 +13,7 @@ import { List, PlusCircle, UserPlus, BarChart, ShoppingCart, MonitorSmartphone, 
 import ComingSoon from "./pages/ComingSoon";
 import { Tooltip } from "antd";
 import KOTKitchenDashboard from "./pages/KOTKitchenDashboard";
+import BusinessInsightsHub from "./pages/BusinessInsightsHub";
 import ProtectedRoute from "../context/ProtectedRoute";
 
 export const billingMenuItems = [
@@ -81,6 +82,7 @@ const BillingRoutes = () => {
       <Route path="reports" element={<SalesReport />} />
       <Route path="source-wise-report" element={<SourceWiseReport />} />
       <Route path="customer-analytics" element={<CustomerAnalytics />} />
+      <Route path="insights" element={<BusinessInsightsHub />} />
     </Routes>
   );
 };

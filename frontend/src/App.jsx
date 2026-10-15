@@ -22,7 +22,8 @@ import {
   MonitorSmartphone,
   List,
   UtensilsCrossed,
-  Receipt
+  Receipt,
+  Sparkles
 } from "lucide-react";
 import CustomerBillCopy from "./billing/pages/CustomerBillCopy";
 import CustomerBillForm from "./billing/pages/CustomerBillingForm";
@@ -227,6 +228,14 @@ function AppInner() {
         };
       });
 
+    // Add Business Insights Hub manually
+    items.push({
+      key: "/billing/insights",
+      label: "Insights Hub",
+      icon: <Sparkles size={20} />,
+      children: null
+    });
+
     // Add Sales Report manually
     items.push({
       key: "/billing/reports",
@@ -380,6 +389,10 @@ function AppInner() {
               <Settings />
             </ProtectedRoute>
           }
+        />
+        <Route
+          path="/insights"
+          element={<Navigate to="/billing/insights" replace />}
         />
 
         <Route

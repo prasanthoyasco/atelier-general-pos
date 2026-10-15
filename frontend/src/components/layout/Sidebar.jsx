@@ -429,7 +429,7 @@ const Sidebar = ({
                     ) : (
                       <img
                         src="/colapslogo.png"
-                        alt="DUCH CLOTHING"
+                        alt="Atelier Billing"
                         className="transition-all duration-300 hover:scale-105"
                         style={{
                           height: 36,
@@ -457,7 +457,7 @@ const Sidebar = ({
                   >
                     <img
                       src="/Company_logo.png"
-                      alt="DUCH CLOTHING"
+                      alt="Atelier Billing"
                       className="transition-all duration-300 hover:scale-102"
                       style={{
                         height: 52,

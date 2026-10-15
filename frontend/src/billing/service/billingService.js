@@ -122,6 +122,16 @@ const billingService = {
     const res = await api.patch(`/billing/billing/kot-items/${itemId}/status`, payload, { params: queryParams });
     return res.data;
   },
+
+  async getKitchenInsights(params = {}) {
+    const branchId = params?.branch_id || getBranchId();
+    const queryParams = { ...params };
+    if (branchId) {
+      queryParams.branch_id = branchId;
+    }
+    const res = await api.get('/billing/billing/kitchen-insights', { params: queryParams });
+    return res.data;
+  },
 };
 
 export default billingService;
