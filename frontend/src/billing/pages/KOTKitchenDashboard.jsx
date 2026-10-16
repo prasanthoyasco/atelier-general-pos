@@ -50,6 +50,56 @@ const playKitchenBeepFallback = () => {
   }
 };
 
+// Default common cancellation reasons for Kitchen Order Tickets
+const DEFAULT_CANCEL_REASONS = [
+  "Customer changed mind",
+  "Item out of stock / Unavailable",
+  "Duplicate / Accidental order",
+  "Customer left / Table walked out",
+  "Wrong table or item entered",
+  "Preparation delay / Waiting too long",
+  "Kitchen equipment issue",
+];
+
+const CANCEL_REASONS_STORAGE_KEY = "kot_cancellation_reason_counts";
+
+const getSortedCancelReasons = () => {
+  let counts = {};
+  try {
+    counts = JSON.parse(localStorage.getItem(CANCEL_REASONS_STORAGE_KEY) || "{}");
+  } catch (e) {
+    counts = {};
+  }
+
+  // Combine default reasons with any custom recorded reasons
+  const allReasons = Array.from(new Set([
+    ...DEFAULT_CANCEL_REASONS,
+    ...Object.keys(counts)
+  ]));
+
+  // Sort descending by usage count; if equal, maintain default order
+  return allReasons.sort((a, b) => {
+    const countA = counts[a] || 0;
+    const countB = counts[b] || 0;
+    if (countB !== countA) return countB - countA;
+    const idxA = DEFAULT_CANCEL_REASONS.indexOf(a);
+    const idxB = DEFAULT_CANCEL_REASONS.indexOf(b);
+    return (idxA !== -1 ? idxA : 999) - (idxB !== -1 ? idxB : 999);
+  });
+};
+
+const recordReasonUsage = (reason) => {
+  if (!reason || !reason.trim()) return;
+  const trimmed = reason.trim();
+  try {
+    const counts = JSON.parse(localStorage.getItem(CANCEL_REASONS_STORAGE_KEY) || "{}");
+    counts[trimmed] = (counts[trimmed] || 0) + 1;
+    localStorage.setItem(CANCEL_REASONS_STORAGE_KEY, JSON.stringify(counts));
+  } catch (e) {
+    console.warn("Failed to record cancellation reason usage:", e);
+  }
+};
+
 export default function KOTKitchenDashboard() {
   const { selectedBranch } = useBranch() || {};
 
@@ -123,6 +173,7 @@ export default function KOTKitchenDashboard() {
   const [cancelTargetId, setCancelTargetId] = useState(null);
   const [cancelReason, setCancelReason] = useState("");
   const [cancelling, setCancelling] = useState(false);
+  const [sortedReasons, setSortedReasons] = useState(() => getSortedCancelReasons());
 
   // Fullscreen toggle handler
   const toggleFullscreen = () => {
@@ -452,17 +503,20 @@ export default function KOTKitchenDashboard() {
   const openCancelModal = (id) => {
     setCancelTargetId(id);
     setCancelReason("");
+    setSortedReasons(getSortedCancelReasons());
     setCancelModalVisible(true);
   };
 
   const handleCancelSubmit = async () => {
     if (!cancelReason.trim()) {
-      message.warning("Please provide a reason for cancellation");
+      message.warning("Please select or enter a cancellation reason");
       return;
     }
     setCancelling(true);
     try {
-      await billingService.updateKOTStatus(cancelTargetId, "cancelled", cancelReason.trim());
+      const reasonToRecord = cancelReason.trim();
+      await billingService.updateKOTStatus(cancelTargetId, "cancelled", reasonToRecord);
+      recordReasonUsage(reasonToRecord);
       broadcastKOTEvent("KOT_STATUS_UPDATED", { id: cancelTargetId, status: "cancelled" });
       message.success("KOT Ticket cancelled successfully.");
       setCancelModalVisible(false);
@@ -1396,9 +1450,19 @@ export default function KOTKitchenDashboard() {
       {/* 5. CANCELLATION MODAL */}
       <Modal
         title={
-          <span className="font-black text-red-600 flex items-center gap-2">
-            <Ban size={18} /> Cancel Kitchen Order Ticket
-          </span>
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-red-100 text-red-600 flex items-center justify-center shrink-0">
+              <Ban size={18} strokeWidth={2.4} />
+            </div>
+            <div>
+              <span className="font-black text-slate-800 text-sm block leading-tight">
+                Cancel Kitchen Order
+              </span>
+              <span className="text-[11px] text-slate-400 font-medium">
+                Tap a suggestion or enter a custom reason
+              </span>
+            </div>
+          </div>
         }
         open={cancelModalVisible}
         onCancel={() => {
@@ -1406,38 +1470,75 @@ export default function KOTKitchenDashboard() {
           setCancelTargetId(null);
         }}
         footer={null}
-        width={380}
+        width={420}
         centered
+        className="kot-cancel-modal"
       >
-        <div className="space-y-4 py-2">
-          <p className="text-xs text-slate-600 font-medium">
-            Are you sure you want to cancel this KOT? Please enter a cancellation reason for kitchen records:
-          </p>
+        <div className="space-y-3.5 pt-1">
+          {/* Common Suggestions (Sorted by most used) */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                Common Reasons (Most Used First)
+              </span>
+              <span className="text-[10px] text-slate-400 font-medium">
+                Tap to pick
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {sortedReasons.map((reason) => {
+                const isSelected = cancelReason === reason;
+                return (
+                  <button
+                    key={reason}
+                    type="button"
+                    onClick={() => setCancelReason(isSelected ? "" : reason)}
+                    className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer text-left border ${
+                      isSelected
+                        ? "bg-red-600 !text-white border-red-600 shadow-xs ring-2 ring-red-400/30"
+                        : "bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200/80 active:scale-95"
+                    }`}
+                  >
+                    {isSelected && <span className="mr-1">✓</span>}
+                    {reason}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
 
-          <Input.TextArea
-            rows={3}
-            value={cancelReason}
-            onChange={(e) => setCancelReason(e.target.value)}
-            placeholder="e.g. Customer changed mind, out of stock..."
-            className="rounded-xl text-xs font-medium"
-          />
+          {/* Reason Input Area */}
+          <div>
+            <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-1">
+              Cancellation Reason
+            </label>
+            <Input.TextArea
+              rows={2}
+              value={cancelReason}
+              onChange={(e) => setCancelReason(e.target.value)}
+              placeholder="Pick a reason above or type custom reason..."
+              className="rounded-xl text-xs font-medium"
+            />
+          </div>
 
           <div className="flex gap-2.5 pt-2">
             <button
+              type="button"
               onClick={() => {
                 setCancelModalVisible(false);
                 setCancelTargetId(null);
               }}
-              className="flex-1 py-2.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50"
+              className="flex-1 py-2.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50 cursor-pointer"
             >
               Back
             </button>
             <button
+              type="button"
               onClick={handleCancelSubmit}
-              disabled={cancelling}
+              disabled={cancelling || !cancelReason.trim()}
               className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 !text-white text-xs font-bold shadow-sm shadow-red-500/20 disabled:opacity-50 cursor-pointer"
             >
-              {cancelling ? "Cancelling..." : "Confirm Cancellation"}
+              {cancelling ? "Cancelling..." : "Confirm Cancel"}
             </button>
           </div>
         </div>

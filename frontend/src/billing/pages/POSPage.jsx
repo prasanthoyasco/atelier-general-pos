@@ -2213,13 +2213,13 @@ export default function POSPage() {
       {/* ================= 6. VIEW KOTS SLIDE-OVER DRAWER (WAITER PICKUP QUEUE) ================= */}
       <Drawer
         placement="right"
-        width={isMobile ? "100%" : 460}
+        width={isMobile ? "100%" : 480}
         onClose={() => setKotDrawerOpen(false)}
         open={kotDrawerOpen}
         title={
           <div className="flex items-center justify-between w-full pr-2">
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-xl bg-orange-100 text-orange-600 flex items-center justify-center font-bold">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-orange-100 text-orange-600 flex items-center justify-center font-bold shrink-0">
                 <ClipboardList size={17} />
               </div>
               <div>
@@ -2251,7 +2251,7 @@ export default function POSPage() {
           </div>
         }
       >
-        <div className="space-y-3">
+        <div className="space-y-3.5">
           {/* Station Filter Pills Bar */}
           <div className="pb-3 border-b border-slate-100 space-y-2">
             <div className="flex items-center justify-between text-[11px] font-bold text-slate-500 uppercase tracking-wider">
@@ -2263,7 +2263,7 @@ export default function POSPage() {
                 </span>
               )}
             </div>
-            <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+            <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-none items-center">
               {kitchenStations.map((station) => {
                 const isSelected = selectedKitchenFilter === station;
                 const stationReady =
@@ -2275,7 +2275,7 @@ export default function POSPage() {
                   <button
                     key={station}
                     onClick={() => setSelectedKitchenFilter(station)}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap flex items-center gap-1.5 transition cursor-pointer select-none ${
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap flex items-center gap-1.5 transition cursor-pointer select-none shrink-0 ${
                       isSelected
                         ? "bg-slate-900 !text-white shadow-xs"
                         : "bg-slate-100 hover:bg-slate-200/80 text-slate-700 border border-slate-200/60"
@@ -2338,73 +2338,85 @@ export default function POSPage() {
                     key={order.id}
                     className={`p-3.5 rounded-2xl border space-y-3 transition-all duration-200 ${
                       isOrderReady
-                        ? "bg-emerald-50/70 border-emerald-300 ring-2 ring-emerald-400/20"
+                        ? "bg-emerald-50/60 border-emerald-300 ring-1 ring-emerald-400/20 shadow-xs"
                         : isOrderPartiallyReady
-                        ? "bg-teal-50/70 border-teal-300 ring-2 ring-teal-400/20"
+                        ? "bg-teal-50/50 border-teal-200 ring-1 ring-teal-400/20"
                         : isOrderPartiallyServed
-                        ? "bg-indigo-50/60 border-indigo-200 ring-2 ring-indigo-400/15"
+                        ? "bg-indigo-50/50 border-indigo-200 ring-1 ring-indigo-400/15"
                         : isOrderFullyServed
-                        ? "bg-slate-50/60 border-slate-200 opacity-80"
-                        : "bg-slate-50 border-slate-200/90"
+                        ? "bg-slate-50/80 border-slate-200 opacity-85"
+                        : "bg-white border-slate-200/90 shadow-2xs"
                     }`}
                   >
-                    {/* Order Top Bar: KOT/Bill Number + Table Badge + Status Tag */}
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className="font-black text-slate-900 text-sm">
-                          {order.kot_number ? `KOT #${order.kot_number}` : order.billing_no}
-                        </span>
-                        <span className="font-bold text-xs bg-white px-2 py-0.5 rounded-md border border-slate-200 text-slate-700 flex items-center gap-1">
-                          <Table size={12} className="text-slate-500 shrink-0" />
-                          <span>{formatTableLabel(order.table_no) || "Counter"}</span>
-                        </span>
+                    {/* Order Top Bar: KOT/Bill Number + Table Badge + Status Pills */}
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="font-black text-slate-900 text-sm tracking-tight whitespace-nowrap">
+                            {order.kot_number ? `KOT #${order.kot_number}` : order.billing_no}
+                          </span>
+                          <span className="inline-flex items-center gap-1 text-[11px] font-bold bg-white px-2 py-0.5 rounded-lg border border-slate-200/90 text-slate-700 shadow-2xs shrink-0">
+                            <Table size={12} className="text-amber-500 shrink-0" />
+                            <span>{formatTableLabel(order.table_no) || "Counter"}</span>
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {/* Payment Status Pill */}
+                          <span
+                            className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md border ${
+                              order.status === "paid"
+                                ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                : "bg-slate-100 text-slate-600 border-slate-200"
+                            }`}
+                          >
+                            {order.status === "paid" ? "Paid" : "Unpaid"}
+                          </span>
+
+                          {/* Food Serving Status Pill */}
+                          {isOrderFullyServed ? (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-extrabold px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 border border-purple-200">
+                              <CheckCircle2 size={11} strokeWidth={2.5} /> Served
+                            </span>
+                          ) : isOrderPartiallyServed ? (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-extrabold px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200">
+                              Partially Served
+                            </span>
+                          ) : isOrderReady ? (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-extrabold px-2 py-0.5 rounded-md bg-emerald-500 text-white shadow-xs animate-pulse">
+                              <Check size={11} strokeWidth={3} /> Ready to Serve
+                            </span>
+                          ) : isOrderPartiallyReady ? (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-extrabold px-2 py-0.5 rounded-md bg-teal-50 text-teal-700 border border-teal-200">
+                              Partially Ready
+                            </span>
+                          ) : isOrderCooking ? (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-extrabold px-2 py-0.5 rounded-md bg-amber-50 text-amber-700 border border-amber-200">
+                              <Clock size={11} className="animate-spin text-amber-600" /> Cooking
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-extrabold px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 border border-slate-200">
+                              New
+                            </span>
+                          )}
+                        </div>
                       </div>
 
-                      <div className="flex items-center gap-1.5">
-                        {/* Decoupled Payment Status Pill */}
-                        <Tag
-                          color={order.status === "paid" ? "green" : "default"}
-                          className="font-bold text-[10px] m-0 rounded-md"
-                        >
-                          {order.status === "paid" ? "Paid" : "Unpaid"}
-                        </Tag>
-
-                        {/* Food Serving Status Pill */}
-                        {isOrderFullyServed ? (
-                          <Tag color="purple" className="font-bold text-[10px] m-0 rounded-md flex items-center gap-1">
-                            <CheckCircle2 size={11} strokeWidth={3} /> Served
-                          </Tag>
-                        ) : isOrderPartiallyServed ? (
-                          <Tag color="geekblue" className="font-bold text-[10px] m-0 rounded-md">
-                            Partially Served
-                          </Tag>
-                        ) : isOrderReady ? (
-                          <Tag color="success" className="font-bold text-[10px] m-0 rounded-md flex items-center gap-1">
-                            <Check size={11} strokeWidth={3} /> Ready to Serve
-                          </Tag>
-                        ) : isOrderPartiallyReady ? (
-                          <Tag color="cyan" className="font-bold text-[10px] m-0 rounded-md">
-                            Partially Ready
-                          </Tag>
-                        ) : isOrderCooking ? (
-                          <Tag color="warning" className="font-bold text-[10px] m-0 rounded-md animate-pulse">
-                            Cooking
-                          </Tag>
-                        ) : (
-                          <Tag color="error" className="font-bold text-[10px] m-0 rounded-md">
-                            New
-                          </Tag>
-                        )}
+                      {/* Sub-header: Customer Info & Line Item Count */}
+                      <div className="flex items-center justify-between text-[11px] text-slate-500 font-medium">
+                        <div className="flex items-center gap-1 min-w-0">
+                          <User size={12} className="text-slate-400 shrink-0" />
+                          <span className="truncate max-w-[220px]">
+                            {order.customer_name ? order.customer_name : "Walk-in Guest"}
+                          </span>
+                        </div>
+                        <span className="text-slate-400 font-semibold shrink-0">
+                          {order.items?.length || 0} line item{order.items?.length === 1 ? "" : "s"}
+                        </span>
                       </div>
                     </div>
 
-                    {/* Customer info & Item count */}
-                    <div className="text-[11px] text-slate-500 font-medium flex items-center justify-between">
-                      <span>{order.customer_name ? `Customer: ${order.customer_name}` : "Dine-in Order"}</span>
-                      <span>{order.items?.length || 0} line item(s)</span>
-                    </div>
-
-                    {/* Line Items List with Separate Kitchen Queues & Unit Serving */}
+                    {/* Line Items List */}
                     <div className="pt-2 border-t border-slate-200/60 space-y-2">
                       {displayItems.map((it, idx) => {
                         const totalQty = it.quantity || 1;
@@ -2421,110 +2433,117 @@ export default function POSPage() {
                             key={it.kot_item_id || idx}
                             className={`p-2.5 rounded-xl border text-xs transition-all ${
                               isLineFullyServed
-                                ? "bg-slate-100/70 border-slate-200 text-slate-500 opacity-80"
+                                ? "bg-slate-100/60 border-slate-200/70 text-slate-500"
                                 : isLineReady
-                                ? "bg-emerald-50/90 border-emerald-300 ring-1 ring-emerald-400/20 shadow-2xs"
+                                ? "bg-emerald-50/80 border-emerald-300 ring-1 ring-emerald-400/20 shadow-2xs"
                                 : isLinePartiallyServed
-                                ? "bg-indigo-50/80 border-indigo-200"
-                                : "bg-white border-slate-200/90"
+                                ? "bg-indigo-50/70 border-indigo-200"
+                                : isLineCooking
+                                ? "bg-amber-50/40 border-amber-200/70"
+                                : "bg-white border-slate-200/90 shadow-2xs"
                             }`}
                           >
-                            {/* Line Item Header: Station Badge + Item Name + Status Tag */}
-                            <div className="flex items-start justify-between gap-2">
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-1.5 flex-wrap">
-                                  {/* Separate Kitchen Station Badge */}
-                                  <span className="text-[10px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded-md bg-slate-200/80 text-slate-700 flex items-center gap-1">
-                                    <ChefHat size={11} className="text-orange-500" />
-                                    {it.kitchen_name || "Main Kitchen"}
-                                  </span>
-
-                                  <span className="font-bold text-slate-800 text-xs truncate">
-                                    {it.product_name}
-                                  </span>
+                            <div className="flex items-center justify-between gap-2.5">
+                              {/* Left Side: Quantity Badge + Product Details */}
+                              <div className="flex items-start gap-2.5 min-w-0 flex-1">
+                                {/* Sleek Quantity Indicator */}
+                                <div
+                                  className={`w-7 h-7 rounded-lg flex items-center justify-center font-black text-xs shrink-0 select-none ${
+                                    isLineFullyServed
+                                      ? "bg-slate-200/70 text-slate-400"
+                                      : isLineReady
+                                      ? "bg-emerald-600 text-white shadow-2xs"
+                                      : isLinePartiallyServed
+                                      ? "bg-indigo-100 text-indigo-800"
+                                      : "bg-slate-100 text-slate-700 border border-slate-200/60"
+                                  }`}
+                                >
+                                  {isLinePartiallyServed ? `${servedQty}/${totalQty}` : `${totalQty}×`}
                                 </div>
 
-                                {it.addons && it.addons.length > 0 && (
-                                  <div className="text-[10px] text-slate-400 font-medium mt-0.5">
-                                    + {it.addons.map((a) => a.addon_name || a.name).join(", ")}
+                                {/* Product Name, Addons & Station */}
+                                <div className="min-w-0 flex-1">
+                                  <div className="font-bold text-slate-800 text-xs truncate leading-snug">
+                                    {it.product_name}
                                   </div>
-                                )}
+
+                                  <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                                    {/* Kitchen Station Pill */}
+                                    <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200/70">
+                                      <ChefHat size={10} className="text-orange-500 shrink-0" />
+                                      <span>{it.kitchen_name || "Main Kitchen"}</span>
+                                    </span>
+
+                                    {/* Addons if any */}
+                                    {it.addons && it.addons.length > 0 && (
+                                      <span
+                                        className="text-[10px] text-slate-400 font-medium truncate max-w-[140px]"
+                                        title={it.addons.map((a) => a.addon_name || a.name).join(", ")}
+                                      >
+                                        +{it.addons.map((a) => a.addon_name || a.name).join(", ")}
+                                      </span>
+                                    )}
+
+                                    {/* Cooking status indicator */}
+                                    {isLineCooking && !isLineFullyServed && (
+                                      <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-100/70 px-1.5 py-0.5 rounded">
+                                        <Clock size={10} className="animate-spin text-amber-600" /> Cooking
+                                      </span>
+                                    )}
+
+                                    {/* Partial served remainder */}
+                                    {isLinePartiallyServed && (
+                                      <span className="text-[10px] font-bold text-indigo-700 bg-indigo-100/70 px-1.5 py-0.5 rounded">
+                                        {remaining} to serve
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
                               </div>
 
-                              {/* Item Line Status Tag */}
-                              <div>
+                              {/* Right Side: Action Control / Status Pill */}
+                              <div className="shrink-0 flex items-center gap-1.5">
                                 {isLineFullyServed ? (
-                                  <Tag color="default" className="font-bold text-[10px] m-0 rounded-md">
-                                    ✓ Served
-                                  </Tag>
-                                ) : isLinePartiallyServed ? (
-                                  <Tag color="geekblue" className="font-bold text-[10px] m-0 rounded-md">
-                                    {servedQty}/{totalQty} Served
-                                  </Tag>
-                                ) : isLineReady ? (
-                                  <Tag color="success" className="font-bold text-[10px] m-0 rounded-md animate-pulse">
-                                    Ready
-                                  </Tag>
-                                ) : isLineCooking ? (
-                                  <Tag color="warning" className="font-bold text-[10px] m-0 rounded-md">
-                                    Cooking
-                                  </Tag>
-                                ) : (
-                                  <Tag color="default" className="font-bold text-[10px] m-0 rounded-md">
-                                    Queued
-                                  </Tag>
-                                )}
-                              </div>
-                            </div>
-
-                            {/* Quantity Tracker Bar & Action Buttons */}
-                            <div className="pt-2 mt-1.5 border-t border-slate-200/60 flex items-center justify-between gap-2">
-                              {/* Quantity Info */}
-                              <div className="flex items-center gap-1.5 text-[11px] font-bold text-slate-600">
-                                <span>Total: {totalQty}</span>
-                                {totalQty > 1 && (
-                                  <span className="text-slate-400">
-                                    • Served: <strong className="text-slate-800">{servedQty}</strong>/{totalQty}
-                                  </span>
-                                )}
-                              </div>
-
-                              {/* Serving Action Controls */}
-                              <div className="flex items-center gap-1.5 shrink-0">
-                                {isLineFullyServed ? (
-                                  <span className="text-[11px] font-bold text-slate-400 flex items-center gap-1 px-2 py-1">
-                                    <Check size={12} strokeWidth={2.5} /> Line Done
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-100 text-slate-500 text-[11px] font-bold border border-slate-200/70">
+                                    <Check size={12} strokeWidth={2.5} className="text-emerald-600" />
+                                    <span>Served</span>
                                   </span>
                                 ) : (
-                                  <>
-                                    {/* Unit-by-unit serving if quantity > 1 */}
-                                    {totalQty > 1 && (
+                                  <div className="flex items-center gap-1.5">
+                                    {/* Unit-by-unit serving button if quantity > 1 and remaining > 1 */}
+                                    {totalQty > 1 && remaining > 1 && (
                                       <button
                                         type="button"
                                         disabled={isBeingServed || remaining <= 0}
                                         onClick={() =>
                                           handleServeLineItem(it.kot_item_id, 1, it.product_name, order.id)
                                         }
-                                        className="py-1 px-2.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 font-black text-[11px] border border-blue-200 transition cursor-pointer disabled:opacity-50"
+                                        className="py-1 px-2 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-[11px] border border-blue-200 transition cursor-pointer disabled:opacity-50"
                                         title="Serve 1 unit"
                                       >
-                                        +1 Serve
+                                        +1
                                       </button>
                                     )}
 
-                                    {/* Serve all remaining units of this line */}
+                                    {/* Serve remaining button */}
                                     <button
                                       type="button"
                                       disabled={isBeingServed || remaining <= 0}
                                       onClick={() =>
                                         handleServeLineItem(it.kot_item_id, null, it.product_name, order.id)
                                       }
-                                      className="py-1 px-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 active:scale-95 !text-white font-black text-[11px] flex items-center gap-1 shadow-2xs transition cursor-pointer disabled:opacity-50"
+                                      className={`py-1 px-2.5 rounded-lg font-bold text-[11px] flex items-center gap-1 shadow-2xs transition cursor-pointer disabled:opacity-50 ${
+                                        isLineReady
+                                          ? "bg-emerald-600 hover:bg-emerald-700 !text-white active:scale-95"
+                                          : "bg-slate-900 hover:bg-slate-800 !text-white active:scale-95"
+                                      }`}
                                     >
                                       <Check size={12} strokeWidth={2.5} />
-                                      <span>{totalQty > 1 ? `Serve Line (${remaining})` : "Serve"}</span>
+                                      <span>
+                                        {totalQty > 1 && remaining > 1 ? `Serve (${remaining})` : "Serve"}
+                                      </span>
                                     </button>
-                                  </>
+                                  </div>
                                 )}
                               </div>
                             </div>
@@ -2534,28 +2553,32 @@ export default function POSPage() {
                     </div>
 
                     {/* Order Level Actions: Load Order + Serve All Order */}
-                    <div className="pt-2 flex items-center gap-2">
+                    <div className="pt-2.5 border-t border-slate-200/70 flex items-center gap-2">
                       <button
+                        type="button"
                         onClick={() => {
                           setKotDrawerOpen(false);
                           loadBillIntoCart(order);
                         }}
-                        className="flex-1 py-1.5 px-2 bg-white hover:bg-slate-100 border border-slate-200 text-slate-800 rounded-lg text-xs font-bold transition cursor-pointer"
+                        className="flex-1 h-8 px-3 bg-white hover:bg-slate-100 border border-slate-200/90 text-slate-700 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
                       >
-                        Load Order
+                        <FileText size={13} className="text-slate-500" />
+                        <span>Load Order</span>
                       </button>
 
                       {!isOrderFullyServed && (
                         <button
+                          type="button"
                           onClick={() =>
                             handleMarkOrderServed(
                               order.id,
                               order.kot_number ? `KOT #${order.kot_number}` : order.billing_no
                             )
                           }
-                          className="flex-1 py-1.5 bg-slate-900 hover:bg-slate-800 active:scale-[0.99] !text-white rounded-lg text-xs font-bold uppercase tracking-wide flex items-center justify-center gap-1 shadow-sm transition cursor-pointer"
+                          className="flex-1 h-8 px-3 bg-slate-900 hover:bg-slate-800 active:scale-[0.99] !text-white rounded-xl text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 shadow-xs transition cursor-pointer"
                         >
-                          <CheckCircle2 size={13} strokeWidth={2.5} /> Serve Entire Order
+                          <CheckCircle2 size={13} strokeWidth={2.5} className="text-emerald-400" />
+                          <span>Serve Entire Order</span>
                         </button>
                       )}
                     </div>
