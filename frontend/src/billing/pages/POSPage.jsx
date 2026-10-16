@@ -11,7 +11,9 @@ import {
   ArrowLeft,
   Sparkles,
   ChefHat,
-  Table
+  Table,
+  Flame,
+  History
 } from "lucide-react";
 import { message, Drawer, Modal, Tag, Select, notification, Radio, Dropdown } from "antd";
 import productService from "../../product/services/productService.js";
@@ -165,6 +167,7 @@ export default function POSPage() {
   const [selectedTableId, setSelectedTableId] = useState(null);
   const [orderType, setOrderType] = useState("Dine In"); // 'Dine In' | 'Takeaway' | 'Delivery'
   const [loadedBillId, setLoadedBillId] = useState(null); // When an active table's bill is loaded
+  const [loadedBill, setLoadedBill] = useState(null); // Full bill record when loaded via editId or table
   const [tablesModalOpen, setTablesModalOpen] = useState(false);
 
   // Payment & Settlement State
@@ -230,8 +233,8 @@ export default function POSPage() {
           return valA.localeCompare(valB, undefined, { numeric: true, sensitivity: "base" });
         });
         setTables(sorted);
-        // If current table doesn't belong to this branch, reset to the first table
-        if (sorted.length > 0) {
+        // If current table doesn't belong to this branch and not in edit mode, reset to the first table
+        if (sorted.length > 0 && !editId) {
           const currentExists = sorted.some((t) => t.id === selectedTableId || t.table_no === tableNo);
           if (!currentExists) {
             setTableNo(formatTableLabel(sorted[0].table_name || sorted[0].table_no || "Table 1"));
@@ -562,35 +565,140 @@ export default function POSPage() {
     };
   }, [soundEnabled]);
 
+  // Cart item key generator
+  const getCartItemKey = (productId, addons = []) => {
+    if (!addons || addons.length === 0) return `${productId}`;
+    const sortedAddonKeys = [...addons]
+      .sort((a, b) => (a.id || "").localeCompare(b.id || ""))
+      .map((a) => `${a.id}:${a.qty || 1}`)
+      .join("|");
+    return `${productId}_addons_${sortedAddonKeys}`;
+  };
+
+  // Helper to map order items to cart format with catalogue fallbacks
+  const mapOrderItemsToCart = (items, catalogue = allItems) => {
+    if (!Array.isArray(items)) return [];
+    return items.map((i) => {
+      const prodId = i.product_id || i.product?.id || i.id;
+      const matchedProduct = (catalogue || []).find(
+        (p) =>
+          p.id === prodId ||
+          (p.product_name &&
+            (i.product_name || i.product?.product_name) &&
+            p.product_name.trim().toLowerCase() === (i.product_name || i.product?.product_name || "").trim().toLowerCase())
+      );
+
+      const parsedPrice = parseFloat(
+        i.unit_price ??
+        i.price ??
+        i.product?.selling_price ??
+        matchedProduct?.selling_price ??
+        matchedProduct?.unit_price ??
+        0
+      );
+
+      const parsedTax = parseFloat(
+        i.tax_percentage ??
+        i.tax_rate ??
+        i.product?.tax_percentage ??
+        matchedProduct?.tax_percentage ??
+        0
+      );
+
+      const itemAddons = Array.isArray(i.addons) ? i.addons : [];
+      const cartKey = getCartItemKey(prodId || matchedProduct?.id, itemAddons);
+
+      return {
+        cart_key: cartKey,
+        id: prodId || matchedProduct?.id || `item-${Date.now()}-${Math.random()}`,
+        name: i.product?.product_name || i.product_name || matchedProduct?.product_name || "Item",
+        category_name: i.category_name || matchedProduct?.category_name || "Item",
+        image_url: i.image_url || i.product?.image_url || matchedProduct?.image_url || null,
+        base_price: parseFloat(matchedProduct?.selling_price || i.product?.selling_price || parsedPrice),
+        addons: itemAddons,
+        price: isNaN(parsedPrice) ? 0 : parsedPrice,
+        qty: parseInt(i.quantity || i.qty || 1, 10),
+        tax_rate: isNaN(parsedTax) ? 0 : parsedTax,
+      };
+    });
+  };
+
   // Load existing bill if editing
   useEffect(() => {
     if (!editId) return;
+    setLoadingProducts(true);
     billingService
       .getById(editId)
       .then((res) => {
-        const sale = res?.data?.data ?? res?.data;
-        if (!sale) return;
-        setCustomerName(sale.customer_name || "");
-        setCustomerPhone(sale.customer_phone || "");
+        const sale = res?.data?.data ?? res?.data ?? res;
+        if (!sale || !sale.id) {
+          message.error("Bill not found");
+          return;
+        }
+
+        setLoadedBillId(sale.id);
+        setLoadedBill(sale);
+
+        if (sale.customer_name) setCustomerName(sale.customer_name);
+        if (sale.customer_phone) setCustomerPhone(sale.customer_phone);
+
         if (sale.counter_no) {
           setTableNo(sale.counter_no.replace("Counter ", "Table "));
         }
-        if (Array.isArray(sale.items)) {
-          setCart(
-            sale.items.map((i) => ({
-              id: i.product_id,
-              name: i.product_name,
-              category_name: i.category_name || "Item",
-              image_url: i.product?.image_url || i.image_url,
-              price: parseFloat(i.unit_price || 0),
-              qty: i.quantity || 1,
-              tax_rate: parseFloat(i.tax_percentage || 0),
-            }))
-          );
+        if (sale.table_id) {
+          setSelectedTableId(sale.table_id);
         }
+        if (sale.payment_method) {
+          setPaymentMethod(sale.payment_method);
+        }
+        if (sale.discount_amount !== undefined && sale.discount_amount !== null) {
+          setDiscountAmount(parseFloat(sale.discount_amount || 0));
+        }
+
+        if (Array.isArray(sale.items) && sale.items.length > 0) {
+          setCart(mapOrderItemsToCart(sale.items));
+        }
+
+        if (sale.branch_id && effectiveBranchId !== sale.branch_id && changeBranch) {
+          changeBranch(sale.branch_id);
+        }
+
+        message.success(`Editing Bill #${sale.billing_no || sale.id.slice(-6)}`);
       })
-      .catch(() => message.error("Failed to load bill"));
+      .catch((err) => {
+        console.error("Failed to load bill for editing:", err);
+        message.error("Failed to load bill");
+      })
+      .finally(() => {
+        setLoadingProducts(false);
+      });
   }, [editId]);
+
+  // Enrich cart items when products catalogue finishes loading
+  useEffect(() => {
+    if (allItems.length > 0 && cart.length > 0) {
+      setCart((prevCart) => {
+        let changed = false;
+        const updated = prevCart.map((cItem) => {
+          if (cItem.category_name && cItem.category_name !== "Item" && cItem.image_url) {
+            return cItem;
+          }
+          const matched = allItems.find(
+            (p) => p.id === cItem.id || (p.product_name && p.product_name.toLowerCase() === (cItem.name || "").toLowerCase())
+          );
+          if (!matched) return cItem;
+          changed = true;
+          return {
+            ...cItem,
+            name: cItem.name || matched.product_name,
+            category_name: matched.category_name || cItem.category_name || "Item",
+            image_url: cItem.image_url || matched.image_url || null,
+          };
+        });
+        return changed ? updated : prevCart;
+      });
+    }
+  }, [allItems]);
 
   // Dynamic Categories
   const categoryTabs = useMemo(() => {
@@ -663,14 +771,6 @@ export default function POSPage() {
   }, [allItems, activeCategory, searchTerm]);
 
   // Cart operations (Minimum 48px touch targets) & Add-on customizations
-  const getCartItemKey = (productId, addons = []) => {
-    if (!addons || addons.length === 0) return `${productId}`;
-    const sortedAddonKeys = [...addons]
-      .sort((a, b) => (a.id || "").localeCompare(b.id || ""))
-      .map((a) => `${a.id}:${a.qty || 1}`)
-      .join("|");
-    return `${productId}_addons_${sortedAddonKeys}`;
-  };
 
   const handleProductClick = (product) => {
     if (product.addons && product.addons.length > 0) {
@@ -880,8 +980,8 @@ export default function POSPage() {
 
   const currentLoadedOrder = useMemo(() => {
     if (!loadedBillId) return null;
-    return kitchenOrders.find((o) => o.id === loadedBillId) || null;
-  }, [loadedBillId, kitchenOrders]);
+    return kitchenOrders.find((o) => o.id === loadedBillId) || loadedBill || null;
+  }, [loadedBillId, kitchenOrders, loadedBill]);
 
   // Select Table from Grid / Modal
   const handleSelectTable = (tbl) => {
@@ -895,64 +995,18 @@ export default function POSPage() {
       loadBillIntoCart(existingOrders[0]);
     } else {
       setLoadedBillId(null);
+      setLoadedBill(null);
       setCart([]);
       clearCustomer();
     }
     setTablesModalOpen(false);
   };
 
-  // Helper to map order items to cart format with catalogue fallbacks
-  const mapOrderItemsToCart = (items) => {
-    if (!Array.isArray(items)) return [];
-    return items.map((i) => {
-      const prodId = i.product_id || i.product?.id || i.id;
-      const matchedProduct = allItems.find(
-        (p) =>
-          p.id === prodId ||
-          (p.product_name &&
-            (i.product_name || i.product?.product_name) &&
-            p.product_name.trim().toLowerCase() === (i.product_name || i.product?.product_name || "").trim().toLowerCase())
-      );
-
-      const parsedPrice = parseFloat(
-        i.unit_price ??
-        i.price ??
-        i.product?.selling_price ??
-        matchedProduct?.selling_price ??
-        matchedProduct?.unit_price ??
-        0
-      );
-
-      const parsedTax = parseFloat(
-        i.tax_percentage ??
-        i.tax_rate ??
-        i.product?.tax_percentage ??
-        matchedProduct?.tax_percentage ??
-        0
-      );
-
-      const itemAddons = Array.isArray(i.addons) ? i.addons : [];
-      const cartKey = getCartItemKey(prodId || matchedProduct?.id, itemAddons);
-
-      return {
-        cart_key: cartKey,
-        id: prodId || matchedProduct?.id || `item-${Date.now()}-${Math.random()}`,
-        name: i.product_name || i.product?.product_name || matchedProduct?.product_name || "Item",
-        category_name: i.category_name || matchedProduct?.category_name || "Item",
-        image_url: i.image_url || i.product?.image_url || matchedProduct?.image_url || null,
-        base_price: parseFloat(matchedProduct?.selling_price || parsedPrice),
-        addons: itemAddons,
-        price: isNaN(parsedPrice) ? 0 : parsedPrice,
-        qty: parseInt(i.quantity || i.qty || 1, 10),
-        tax_rate: isNaN(parsedTax) ? 0 : parsedTax,
-      };
-    });
-  };
-
   // Load a table's bill into the cart
   const loadBillIntoCart = async (order) => {
     if (!order) return;
     setLoadedBillId(order.id);
+    setLoadedBill(order);
     const tbl = order.table_no || (order.counter_no ? order.counter_no.replace("Counter ", "Table ") : "Table 1");
     setTableNo(tbl);
     if (order.customer_name) setCustomerName(order.customer_name);
@@ -970,6 +1024,7 @@ export default function POSPage() {
         const res = await billingService.getById(order.id);
         const fullBill = res?.data?.data ?? res?.data ?? res;
         if (fullBill) {
+          setLoadedBill(fullBill);
           if (fullBill.customer_name) setCustomerName(fullBill.customer_name);
           if (fullBill.customer_phone) setCustomerPhone(fullBill.customer_phone);
           if (Array.isArray(fullBill.items) && fullBill.items.length > 0) {
@@ -985,8 +1040,12 @@ export default function POSPage() {
   // Start fresh empty order
   const handleStartFreshOrder = () => {
     setLoadedBillId(null);
+    setLoadedBill(null);
     setCart([]);
     clearCustomer();
+    if (editId) {
+      navigate('/billing/pos', { replace: true });
+    }
     message.info(`Ready for new order on ${tableNo}`);
   };
 
@@ -1138,6 +1197,10 @@ export default function POSPage() {
       setCart([]);
       clearCustomer();
       setLoadedBillId(null);
+      setLoadedBill(null);
+      if (editId) {
+        navigate('/billing/pos', { replace: true });
+      }
       fetchKitchenQueue();
     } catch (err) {
       console.error("Payment settlement error:", err);
@@ -1149,8 +1212,8 @@ export default function POSPage() {
 
   // Primary Action: Create KOT and Send to Kitchen
   const handleCreateKOT = async () => {
-    if (cart.length === 0) {
-      message.warning("Order is empty! Please select products.");
+    if (!cart || cart.length === 0) {
+      message.error("Cannot create KOT without items! Please add at least 1 item to the order.");
       return;
     }
 
@@ -1209,6 +1272,10 @@ export default function POSPage() {
       setCart([]);
       clearCustomer();
       setLoadedBillId(null);
+      setLoadedBill(null);
+      if (editId) {
+        navigate('/billing/pos', { replace: true });
+      }
       setMobileCartOpen(false);
       fetchKitchenQueue();
     } catch (err) {
@@ -1649,7 +1716,7 @@ export default function POSPage() {
               {/* 1. SEND TO KITCHEN (KOT) */}
               <button
                 onClick={handleCreateKOT}
-                disabled={submittingKOT || cart.length === 0}
+                disabled={submittingKOT}
                 className="min-h-[52px] py-2 px-2.5 bg-[#F97316] hover:bg-[#EA580C] active:scale-[0.99] !text-white rounded-xl flex flex-col items-center justify-center shadow-md shadow-orange-500/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
               >
                 <div className="flex items-center gap-1.5">
@@ -1666,7 +1733,7 @@ export default function POSPage() {
               {/* 2. PAY & SETTLE BILL */}
               <button
                 onClick={() => handleOpenPayment()}
-                disabled={cart.length === 0}
+                disabled={false}
                 className="min-h-[52px] py-2 px-2.5 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] !text-white rounded-xl flex flex-col items-center justify-center shadow-md shadow-emerald-500/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
               >
                 <div className="flex items-center gap-1.5">
@@ -1886,7 +1953,7 @@ export default function POSPage() {
         <div className="grid grid-cols-2 gap-2">
           <button
             onClick={handleCreateKOT}
-            disabled={submittingKOT || cart.length === 0}
+            disabled={submittingKOT}
             className="min-h-[48px] py-2.5 px-3 bg-[#F97316] hover:bg-[#EA580C] active:scale-[0.98] !text-white rounded-xl flex items-center justify-center gap-2 shadow-md shadow-orange-500/25 transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer font-black text-xs uppercase"
           >
             <Printer size={18} strokeWidth={2.2} />
@@ -1897,7 +1964,7 @@ export default function POSPage() {
 
           <button
             onClick={() => handleOpenPayment()}
-            disabled={cart.length === 0}
+            disabled={false}
             className="min-h-[48px] py-2.5 px-3 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] !text-white rounded-xl flex items-center justify-center gap-2 shadow-md shadow-emerald-500/25 transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer font-black text-xs uppercase"
           >
             <CreditCard size={18} strokeWidth={2.2} />
@@ -2019,10 +2086,14 @@ export default function POSPage() {
             <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-100">
               <button
                 onClick={() => {
+                  if (!cart || cart.length === 0) {
+                    message.error("Cannot create KOT without items! Please add at least 1 item to the order.");
+                    return;
+                  }
                   setMobileCartOpen(false);
                   handleCreateKOT();
                 }}
-                disabled={submittingKOT || cart.length === 0}
+                disabled={submittingKOT}
                 className="py-3 px-2 bg-[#F97316] hover:bg-[#EA580C] !text-white rounded-xl text-xs font-black uppercase flex items-center justify-center gap-1.5 shadow-md disabled:opacity-50"
               >
                 <Printer size={16} />
@@ -2031,10 +2102,14 @@ export default function POSPage() {
 
               <button
                 onClick={() => {
+                  if (!cart || cart.length === 0) {
+                    message.error("Cannot proceed to payment without items! Please add at least 1 item.");
+                    return;
+                  }
                   setMobileCartOpen(false);
                   handleOpenPayment();
                 }}
-                disabled={cart.length === 0}
+                disabled={false}
                 className="py-3 px-2 bg-emerald-600 hover:bg-emerald-700 !text-white rounded-xl text-xs font-black uppercase flex items-center justify-center gap-1.5 shadow-md disabled:opacity-50"
               >
                 <CreditCard size={16} />

@@ -358,8 +358,8 @@ export default function WaiterPage() {
 
   // ================= 4. CORE ACTION: SUBMIT KOT =================
   const handleSendKOT = async () => {
-    if (cart.length === 0) {
-      message.warning("Cart is empty! Add products first.");
+    if (!cart || cart.length === 0) {
+      message.error("Cannot create KOT without items! Please add at least 1 item to the order.");
       return;
     }
     if (!selectedTable) {
@@ -1523,7 +1523,7 @@ export default function WaiterPage() {
           {/* Big Action: Send KOT to Kitchen */}
           <button
             type="button"
-            disabled={submittingKOT || cart.length === 0}
+            disabled={submittingKOT}
             onClick={handleSendKOT}
             className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] !text-white rounded-xl text-sm font-black uppercase tracking-wide flex items-center justify-center gap-2 shadow-md shadow-emerald-500/25 cursor-pointer disabled:opacity-50"
           >

@@ -112,10 +112,11 @@ export default function KOTKitchenDashboard() {
     }
   };
 
-  // Filtered tickets
-  const filteredTickets = selectedKitchen === "All" 
+  // Filtered tickets (excluding any empty ghost tickets without items)
+  const filteredTickets = (selectedKitchen === "All" 
     ? tickets 
-    : tickets.filter(t => t.kitchen_name === selectedKitchen);
+    : tickets.filter(t => t.kitchen_name === selectedKitchen)
+  ).filter(t => t.items && t.items.length > 0);
 
   // Cancellation Modal
   const [cancelModalVisible, setCancelModalVisible] = useState(false);
@@ -304,7 +305,24 @@ export default function KOTKitchenDashboard() {
       prev
         .map((t) => {
           if (t.id === ticketId) {
-            const updated = { ...t, kot_status: nextStatus, status: nextStatus }; // Ensure both are updated for safety
+            const isPartiallyServed = t.kot_status === "partially_served";
+            const updated = {
+              ...t,
+              kot_status: isPartiallyServed && nextStatus !== "served" ? "partially_served" : nextStatus,
+              status: isPartiallyServed && nextStatus !== "served" ? "partially_served" : nextStatus,
+              items: t.items?.map((it) => {
+                if (nextStatus === "ready" && !it.is_served && it.status !== "served" && it.status !== "cancelled") {
+                  return { ...it, status: "ready" };
+                }
+                if (nextStatus === "preparing" && it.status === "pending") {
+                  return { ...it, status: "preparing" };
+                }
+                if (nextStatus === "served") {
+                  return { ...it, status: "served", is_served: true, served_quantity: it.quantity || 1 };
+                }
+                return it;
+              }),
+            };
             if (nextStatus === "preparing") updated.kot_preparing_at = new Date().toISOString();
             if (nextStatus === "ready") updated.kot_ready_at = new Date().toISOString();
             return updated;
@@ -468,16 +486,52 @@ export default function KOTKitchenDashboard() {
     };
   };
 
+  // Helper to determine if an order has unserved items waiting to be prepared/cooked
+  const hasUnservedCookingItems = (t) => {
+    return t.items?.some(
+      (i) => !i.is_served && i.status !== "served" && i.status !== "ready" && i.status !== "cancelled"
+    );
+  };
+
+  // Helper to determine if an order has unserved items that are ready for pickup
+  const hasUnservedReadyItems = (t) => {
+    return t.items?.some((i) => !i.is_served && i.status === "ready");
+  };
+
+  // Helper to determine if an order has pending items that haven't started cooking yet
+  const hasUnservedPendingItems = (t) => {
+    return t.items?.some(
+      (i) => !i.is_served && (i.status === "pending" || !i.status) && i.status !== "cancelled"
+    );
+  };
+
   // Categorize tickets with partial orders support
-  const pendingTickets = filteredTickets.filter((t) => t.kot_status === "pending");
-  const preparingTickets = filteredTickets.filter(
-    (t) => t.kot_status === "preparing" || t.kot_status === "partially_ready"
-  );
-  const readyTickets = filteredTickets.filter(
-    (t) =>
-      t.kot_status === "ready" ||
-      (t.kot_status === "partially_served" && t.items?.some((i) => i.status === "ready" && !i.is_served))
-  );
+  const pendingTickets = filteredTickets.filter((t) => {
+    if (t.kot_status === "pending") return true;
+    if (t.kot_status === "partially_served") {
+      const hasCookingOrReady = t.items?.some(
+        (i) => !i.is_served && (i.status === "preparing" || i.status === "ready")
+      );
+      return !hasCookingOrReady && hasUnservedPendingItems(t);
+    }
+    return false;
+  });
+
+  const preparingTickets = filteredTickets.filter((t) => {
+    if (t.kot_status === "preparing" || t.kot_status === "partially_ready") return true;
+    if (t.kot_status === "partially_served") {
+      return hasUnservedCookingItems(t);
+    }
+    return false;
+  });
+
+  const readyTickets = filteredTickets.filter((t) => {
+    if (t.kot_status === "ready") return true;
+    if (t.kot_status === "partially_ready" || t.kot_status === "partially_served") {
+      return hasUnservedReadyItems(t);
+    }
+    return false;
+  });
 
   return (
     <div className="min-h-screen w-full bg-[#F4F6F9] flex flex-col font-sans select-none overflow-x-hidden">
@@ -726,6 +780,11 @@ export default function KOTKitchenDashboard() {
                       <div className="flex items-center justify-between">
                         <span className="text-sm md:text-base font-black text-slate-900 tracking-tight">
                           {order.kot_number ? `KOT #${order.kot_number}` : order.billing_no}
+                          {order.kot_status === "partially_served" && (
+                            <span className="ml-2 text-[10px] bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded border border-blue-200 font-bold">
+                              Partially Served
+                            </span>
+                          )}
                           {order.kitchen_name && selectedKitchen === "All" && (
                             <span className="ml-2 text-[10px] bg-amber-50 text-amber-600 px-1.5 py-0.5 rounded border border-amber-200">
                                 {order.kitchen_name}
@@ -928,7 +987,7 @@ export default function KOTKitchenDashboard() {
                                   <Tag color="default" className="font-bold text-[10px] m-0 rounded-md">
                                     ✓ Served
                                   </Tag>
-                                ) : (
+                                ) : item.status === "ready" ? (
                                   <button
                                     onClick={() => handleItemStatusTransition(order.id, item.kot_item_id, "served")}
                                     disabled={isItemActionLoading}
@@ -937,6 +996,10 @@ export default function KOTKitchenDashboard() {
                                     <Check size={11} strokeWidth={3} />
                                     <span>Served</span>
                                   </button>
+                                ) : (
+                                  <Tag color="warning" className="font-bold text-[10px] m-0 rounded-md">
+                                    Cooking
+                                  </Tag>
                                 )}
                               </div>
                             </div>
@@ -1081,6 +1144,11 @@ export default function KOTKitchenDashboard() {
                       <div className="flex justify-between items-center">
                         <span className="font-black text-base text-slate-900">
                           {order.kot_number ? `KOT #${order.kot_number}` : order.billing_no}
+                          {order.kot_status === "partially_served" && (
+                            <span className="ml-2 text-[10px] bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded border border-blue-200 font-bold">
+                              Partially Served
+                            </span>
+                          )}
                         </span>
                         <span className="text-xs font-black text-amber-600 inline-flex items-center gap-1">
                           <Clock size={13} />
@@ -1199,7 +1267,7 @@ export default function KOTKitchenDashboard() {
                               <div className="shrink-0">
                                 {isLineServed ? (
                                   <Tag color="default" className="font-bold text-[10px] m-0 rounded">✓ Served</Tag>
-                                ) : (
+                                ) : item.status === "ready" ? (
                                   <button
                                     onClick={() => handleItemStatusTransition(order.id, item.kot_item_id, "served")}
                                     disabled={isItemActionLoading}
@@ -1207,6 +1275,8 @@ export default function KOTKitchenDashboard() {
                                   >
                                     Served
                                   </button>
+                                ) : (
+                                  <Tag color="warning" className="font-bold text-[10px] m-0 rounded">Cooking</Tag>
                                 )}
                               </div>
                             </div>
