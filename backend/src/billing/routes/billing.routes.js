@@ -12,6 +12,9 @@ router.post("/billing", verifyToken, authorize(["billing.create", "billing.manag
 // ✅ Get active kitchen queue
 router.get("/billing/kitchen-queue", verifyToken, authorize(["kot.view", "billing.view", "billing.manage"]), authenticateBranch(), billingController.getKitchenQueue);
 
+// ✅ Get kitchen insights & bottlenecks (Live + Historical)
+router.get("/billing/kitchen-insights", verifyToken, authorize(["kot.view", "billing.view", "billing.manage"]), authenticateBranch(true), billingController.getKitchenInsights);
+
 // ✅ Get all billings - allows multiple branches
 router.get("/billing", verifyToken, authorize(["billing.view", "billing.manage"]), authenticateBranch(true), billingController.getAll);
 

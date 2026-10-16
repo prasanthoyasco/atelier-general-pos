@@ -197,6 +197,50 @@ const billingController = {
     }
   },
 
+  // ✅ Get Kitchen Insights & Bottlenecks (Live + Historical)
+  async getKitchenInsights(req, res) {
+    try {
+      let branch_ids = [];
+      if (req.branchContext) {
+        if (req.branchContext.multipleBranches && req.branchContext.branches) {
+          const userBranchIds = req.branchContext.branches.map(b => b.branchId);
+          if (req.query.branch_id) {
+            if (!userBranchIds.includes(req.query.branch_id)) {
+              return res.status(403).json({ success: false, message: "You don't have access to the selected branch" });
+            }
+            branch_ids = [req.query.branch_id];
+          } else {
+            branch_ids = userBranchIds;
+          }
+        } else if (req.branchContext.branchId) {
+          branch_ids = [req.branchContext.branchId];
+        }
+      }
+
+      if (!branch_ids.length && req.query.branch_id) {
+        branch_ids = [req.query.branch_id];
+      }
+
+      const { period = 'today', startDate, endDate, threshold_minutes } = req.query;
+
+      const insights = await billingService.getKitchenInsights(branch_ids, {
+        period,
+        startDate,
+        endDate,
+        thresholdMinutes: threshold_minutes
+      });
+
+      return res.status(200).json({
+        success: true,
+        data: insights,
+        message: "Kitchen insights retrieved successfully"
+      });
+    } catch (err) {
+      console.error("Error retrieving kitchen insights:", err);
+      return res.status(500).json({ success: false, message: err.message || "Failed to retrieve kitchen insights" });
+    }
+  },
+
   // ✅ Update KOT Status
   async updateKOTStatus(req, res) {
     try {
