@@ -410,6 +410,7 @@ export default function WaiterPage() {
       }
 
       // Broadcast and reset
+      broadcastKOTEvent("NEW_KOT_ORDER", { table: tableLabel });
       broadcastKOTEvent("KOT_CREATED", { table: tableLabel });
       setCart([]);
       setOrderNotes("");
@@ -761,6 +762,26 @@ export default function WaiterPage() {
                           setSelectedTablePickupFilter(tNo);
                           setActiveTab("pickup");
                         } else {
+                          // If table has an active order, load it so waiter can add more items or adjust
+                          if (isOccupied && activeOrder) {
+                            setLoadedBillId(activeOrder.billing_id || activeOrder.id);
+                            if (Array.isArray(activeOrder.items) && activeOrder.items.length > 0) {
+                              setCart(
+                                activeOrder.items.map((it) => ({
+                                  id: it.product_id || it.id,
+                                  name: it.product_name,
+                                  price: parseFloat(it.price || it.unit_price || 0),
+                                  tax_rate: parseFloat(it.tax_percentage || it.tax_rate || 0),
+                                  image_url: it.image_url,
+                                  qty: parseInt(it.quantity || it.qty || 1, 10),
+                                  billing_item_id: it.billing_item_id || it.id,
+                                }))
+                              );
+                            }
+                          } else {
+                            setLoadedBillId(null);
+                            setCart([]);
+                          }
                           // Jump to take order view
                           setActiveTab("order");
                         }

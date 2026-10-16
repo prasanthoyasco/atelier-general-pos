@@ -252,7 +252,7 @@ export default function KOTKitchenDashboard() {
           }
         }
 
-        if (eventType === "NEW_KOT_ORDER") {
+        if (eventType === "NEW_KOT_ORDER" || eventType === "KOT_CREATED" || eventType === "KOT_UPDATED") {
           if (soundEnabled) {
             playNewOrderNotification();
           }
