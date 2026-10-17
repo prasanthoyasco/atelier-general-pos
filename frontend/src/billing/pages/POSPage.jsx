@@ -169,6 +169,7 @@ export default function POSPage() {
   const [loadedBillId, setLoadedBillId] = useState(null); // When an active table's bill is loaded
   const [loadedBill, setLoadedBill] = useState(null); // Full bill record when loaded via editId or table
   const [tablesModalOpen, setTablesModalOpen] = useState(false);
+  const [tableModalFilter, setTableModalFilter] = useState("all"); // 'all' | 'available' | 'occupied'
 
   // Payment & Settlement State
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
@@ -978,6 +979,35 @@ export default function POSPage() {
 
   const activeTablesCount = Object.keys(activeTableMap).length;
 
+  // Helper to determine if a table has an active unpaid order
+  const isTableOccupied = (tblName) => {
+    if (!tblName) return false;
+    const formatted = formatTableLabel(tblName);
+    const orders = activeTableMap[formatted] || activeTableMap[tblName] || [];
+    return orders.some((o) => o.status !== "paid" && o.status !== "cancelled");
+  };
+
+  // Helper to find next available/vacant table
+  const findNextAvailableTable = (afterTable = null) => {
+    if (!ALL_TABLES || ALL_TABLES.length === 0) return null;
+    const vacantTables = ALL_TABLES.filter((t) => !isTableOccupied(t));
+    if (vacantTables.length === 0) return null;
+
+    if (afterTable) {
+      const formattedAfter = formatTableLabel(afterTable);
+      const afterIdx = ALL_TABLES.findIndex((t) => formatTableLabel(t) === formattedAfter);
+      if (afterIdx !== -1) {
+        const next = ALL_TABLES.slice(afterIdx + 1).find((t) => !isTableOccupied(t));
+        if (next) return next;
+      }
+    }
+    return vacantTables[0];
+  };
+
+  const nextAvailableTable = useMemo(() => {
+    return findNextAvailableTable(tableNo);
+  }, [ALL_TABLES, activeTableMap, tableNo]);
+
   const currentLoadedOrder = useMemo(() => {
     if (!loadedBillId) return null;
     return kitchenOrders.find((o) => o.id === loadedBillId) || loadedBill || null;
@@ -1217,6 +1247,28 @@ export default function POSPage() {
       return;
     }
 
+    const billId = loadedBillId || editId;
+
+    // Strict Table Occupancy Check: Only 1 active order per table until paid
+    if (!billId && isTableOccupied(tableNo)) {
+      const activeOrders = activeTableMap[tableNo] || [];
+      const primary = activeOrders[0];
+      const nextVacant = findNextAvailableTable(tableNo);
+      message.error(
+        `${tableNo} is occupied with an active order (${primary?.billing_no || 'Unpaid'}). Order must be paid before placing a new order on this table.`,
+        5
+      );
+      if (nextVacant) {
+        notification.info({
+          message: "Next Available Table",
+          description: `Switching to ${formatTableLabel(nextVacant)} for your new order. Or load existing order to add items to ${tableNo}.`,
+          duration: 5
+        });
+        handleSelectTable(nextVacant);
+      }
+      return;
+    }
+
     setSubmittingKOT(true);
     try {
       const payload = {
@@ -1251,12 +1303,32 @@ export default function POSPage() {
       };
 
       const billId = loadedBillId || editId;
+      let billData = null;
       if (billId) {
-        await billingService.update(billId, payload);
+        const res = await billingService.update(billId, payload);
+        billData = res?.data;
         message.success("KOT order updated successfully!");
       } else {
-        await billingService.create(payload);
+        const res = await billingService.create(payload);
+        billData = res?.data;
         message.success("🎉 KOT Created! Order sent directly to Kitchen.");
+      }
+
+      // Auto-dispatch station KOT tickets to configured printers
+      if (billData?.kots && Array.isArray(billData.kots)) {
+        for (const kot of billData.kots) {
+          try {
+            await localPrintService.printKOTLocally({
+              ...kot,
+              billing_no: billData.billing_no,
+              table_name: tableNo || billData.counter_no,
+              waiter_name: user?.name || user?.username,
+              items: kot.kotItems || kot.items || payload.items,
+            });
+          } catch (printErr) {
+            console.warn("Station KOT printer not reachable:", printErr.message);
+          }
+        }
       }
 
       // Broadcast instant new KOT creation event to KDS
@@ -1278,6 +1350,16 @@ export default function POSPage() {
       }
       setMobileCartOpen(false);
       fetchKitchenQueue();
+
+      // Automatically select the next available table
+      const nextVacant = findNextAvailableTable(tableNo);
+      if (nextVacant) {
+        const nextLabel = formatTableLabel(nextVacant);
+        setTableNo(nextLabel);
+        const matched = tables.find(t => formatTableLabel(t.table_name || t.table_no) === nextLabel);
+        if (matched) setSelectedTableId(matched.id);
+        message.info(`Auto-selected next available table: ${nextLabel}`);
+      }
     } catch (err) {
       console.error("Failed to create KOT:", err);
       message.error(err?.response?.data?.message || err?.message || "Failed to create KOT order");
@@ -1525,15 +1607,43 @@ export default function POSPage() {
         <div className="hidden md:flex w-[330px] lg:w-[370px] xl:w-[410px] bg-white rounded-2xl border border-slate-200/90 shadow-sm flex-col overflow-hidden shrink-0">
           {/* Header row: Table selection banner */}
           <div className="px-4 py-2.5 border-b border-slate-100 flex items-center justify-between shrink-0 bg-slate-50/80">
-            <div className="flex items-center gap-2 min-w-0">
+            <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
               <button
                 onClick={() => setTablesModalOpen(true)}
-                className="px-2.5 py-1 bg-white border border-slate-200 rounded-lg text-xs font-black text-slate-800 flex items-center gap-1.5 hover:bg-slate-50 cursor-pointer shadow-sm"
+                className="px-2.5 py-1 bg-white border border-slate-200 rounded-lg text-xs font-black text-slate-800 flex items-center gap-1.5 hover:bg-slate-50 cursor-pointer shadow-sm shrink-0"
               >
                 <Table size={14} className="text-blue-600 shrink-0" />
                 <span className="truncate">{formatTableLabel(tableNo)}</span>
                 <ChevronDown size={12} className="text-slate-400" />
               </button>
+
+              {/* Real-time Vacant vs Occupied Indicator */}
+              {isTableOccupied(tableNo) ? (
+                <span className="px-2 py-0.5 rounded-md text-[10px] font-extrabold bg-amber-50 text-amber-800 border border-amber-200 shrink-0">
+                  Occupied (Unpaid)
+                </span>
+              ) : (
+                <span className="px-2 py-0.5 rounded-md text-[10px] font-extrabold bg-emerald-50 text-emerald-800 border border-emerald-200 shrink-0 flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                  Vacant
+                </span>
+              )}
+
+              {/* 1-click shortcut to switch to next available table if occupied */}
+              {isTableOccupied(tableNo) && nextAvailableTable && !loadedBillId && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleSelectTable(nextAvailableTable);
+                    message.info(`Switched to next available table: ${formatTableLabel(nextAvailableTable)}`);
+                  }}
+                  className="px-2 py-0.5 rounded-md text-[10px] font-extrabold bg-emerald-600 hover:bg-emerald-700 !text-white flex items-center gap-1 shadow-2xs cursor-pointer transition shrink-0"
+                  title="Switch to next available table"
+                >
+                  <span>Next: {formatTableLabel(nextAvailableTable)}</span>
+                  <ArrowRight size={10} />
+                </button>
+              )}
 
               {loadedBillId && currentLoadedOrder && (
                 <Tag
@@ -2712,13 +2822,75 @@ export default function POSPage() {
         width={isMobile ? "100%" : 760}
         style={isMobile ? { maxWidth: "100%", margin: "0 auto", top: 12 } : undefined}
       >
-        <div className="py-2 space-y-4">
+        <div className="py-2 space-y-3.5">
           <p className="text-xs text-slate-500 font-medium">
-            Select a table to start a new order, load an ongoing order, or collect payment directly.
+            Select a table to start a new order, load an ongoing order, or collect payment directly. Only one active order can be placed per table until paid.
           </p>
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 max-h-[60vh] overflow-y-auto pr-1">
-            {ALL_TABLES.map((tbl) => {
+          {/* Quick next available table suggestion banner */}
+          {nextAvailableTable && (
+            <div className="flex items-center justify-between p-2.5 rounded-xl bg-emerald-50/80 border border-emerald-200">
+              <div className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+                <span className="text-xs font-bold text-emerald-900">
+                  Next Available Table: <strong>{formatTableLabel(nextAvailableTable)}</strong>
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => handleSelectTable(nextAvailableTable)}
+                className="px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 !text-white text-xs font-bold transition flex items-center gap-1 shadow-xs cursor-pointer"
+              >
+                <span>Select {formatTableLabel(nextAvailableTable)}</span>
+                <ArrowRight size={12} />
+              </button>
+            </div>
+          )}
+
+          {/* Filter Pills: All / Available / Occupied */}
+          <div className="flex items-center gap-1.5 border-b border-slate-100 pb-2">
+            <button
+              onClick={() => setTableModalFilter("all")}
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+                tableModalFilter === "all"
+                  ? "bg-slate-900 text-white"
+                  : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+              }`}
+            >
+              All ({ALL_TABLES.length})
+            </button>
+            <button
+              onClick={() => setTableModalFilter("available")}
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1 ${
+                tableModalFilter === "available"
+                  ? "bg-emerald-600 text-white"
+                  : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200"
+              }`}
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+              Available ({ALL_TABLES.filter((t) => !isTableOccupied(t)).length})
+            </button>
+            <button
+              onClick={() => setTableModalFilter("occupied")}
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1 ${
+                tableModalFilter === "occupied"
+                  ? "bg-amber-600 text-white"
+                  : "bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200"
+              }`}
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+              Occupied ({ALL_TABLES.filter((t) => isTableOccupied(t)).length})
+            </button>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 max-h-[55vh] overflow-y-auto pr-1">
+            {ALL_TABLES
+              .filter((tbl) => {
+                if (tableModalFilter === "available") return !isTableOccupied(tbl);
+                if (tableModalFilter === "occupied") return isTableOccupied(tbl);
+                return true;
+              })
+              .map((tbl) => {
               const activeOrders = activeTableMap[tbl] || [];
               const isOccupied = activeOrders.length > 0;
               const isSelected = tableNo === tbl;

@@ -125,7 +125,7 @@ app.use('/uploads/tickets', (req, res, next) => {
 }, express.static(path.join(__dirname, '../../public/uploads/tickets')));
 
 // ---------- Health / Test Routes ----------
-app.get('/health', (req, res) => {
+app.get(['/health', '/api/v1/health'], (req, res) => {
   res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 

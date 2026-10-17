@@ -12,6 +12,14 @@ import {
   message,
   Spin,
   Alert,
+  Table,
+  Tag,
+  Modal,
+  Select,
+  Switch,
+  Badge,
+  Popconfirm,
+  Tooltip,
 } from "antd";
 import {
   SaveOutlined,
@@ -22,10 +30,26 @@ import {
   ReloadOutlined,
   DownloadOutlined,
   ShopOutlined,
+  PlusOutlined,
+  CheckCircleOutlined,
+  CloseCircleOutlined,
+  WifiOutlined,
+  KeyOutlined,
+  DeleteOutlined,
+  EditOutlined,
+  CheckOutlined,
 } from "@ant-design/icons";
 import userService from "../../user/service/userService";
+import productService from "../../product/services/productService";
 import localPrintService from "../../billing/service/localPrintService";
 import { defaultReceiptSettings, getReceiptSettings, saveReceiptSettings } from "../../billing/service/receiptSettings";
+import {
+  getConfiguredPrinters,
+  saveConfiguredPrinters,
+  getPairingToken,
+  savePairingToken,
+  DEFAULT_BILLING_PRINTER,
+} from "../../billing/service/printerSettings";
 
 const { TabPane } = Tabs;
 
@@ -43,11 +67,33 @@ const Settings = () => {
   const [printServiceStatus, setPrintServiceStatus] = useState(null);
   const [printServiceLoading, setPrintServiceLoading] = useState(false);
 
+  // Universal Printer Management State
+  const [configuredPrinters, setConfiguredPrinters] = useState(() => getConfiguredPrinters());
+  const [kitchenStations, setKitchenStations] = useState([]);
+  const [printerModalVisible, setPrinterModalVisible] = useState(false);
+  const [editingPrinterId, setEditingPrinterId] = useState(null);
+  const [printerForm] = Form.useForm();
+  const [selectedConnectionType, setSelectedConnectionType] = useState("os_spooler");
+  const [pairingTokenModalVisible, setPairingTokenModalVisible] = useState(false);
+  const [currentPairingToken, setCurrentPairingToken] = useState(() => getPairingToken());
+  const [testingPrinterId, setTestingPrinterId] = useState(null);
+
   // Fetch user data on component mount
   useEffect(() => {
     fetchUserData();
     receiptForm.setFieldsValue(getReceiptSettings());
+    loadKitchenStations();
+    checkPrintService();
   }, []);
+
+  const loadKitchenStations = async () => {
+    try {
+      const res = await productService.getKitchens();
+      setKitchenStations(res?.data?.data || []);
+    } catch (err) {
+      console.warn("Could not load kitchen stations for printer mapping:", err.message);
+    }
+  };
 
   const fetchUserData = async () => {
     try {
@@ -132,11 +178,16 @@ const Settings = () => {
     try {
       const status = await localPrintService.checkLocalPrintService();
       setPrintServiceStatus(status);
-      message.success("Local print service is running");
+      // Auto-pair token if missing
+      if (!getPairingToken()) {
+        const paired = await localPrintService.autoPairService();
+        if (paired) {
+          setCurrentPairingToken(paired);
+        }
+      }
     } catch (error) {
-      console.error(error);
+      console.warn(error);
       setPrintServiceStatus(null);
-      message.error("Local print service is not running");
     } finally {
       setPrintServiceLoading(false);
     }
@@ -147,23 +198,114 @@ const Settings = () => {
     try {
       const printers = await localPrintService.findLocalPrinters();
       setLocalPrinters(printers);
-      const defaultPrinter = printers.find((printer) => printer.default);
-      if (!printerName && defaultPrinter) {
-        setPrinterName(defaultPrinter.name);
-        localStorage.setItem("thermalPrinterName", defaultPrinter.name);
-      }
-      message.success("Printers loaded");
+      message.success(`Found ${printers.length} installed system printers`);
     } catch (error) {
       console.error(error);
-      message.error(error.message || "Failed to load local printers");
+      message.error(error.message || "Failed to load local printers. Check local print service.");
     } finally {
       setPrintServiceLoading(false);
     }
   };
 
-  const savePrinterName = () => {
-    localStorage.setItem("thermalPrinterName", printerName.trim());
-    message.success("Printer saved for this computer");
+  const handleOpenAddPrinterModal = (printer = null) => {
+    if (printer) {
+      setEditingPrinterId(printer.id);
+      setSelectedConnectionType(printer.connection_type || "os_spooler");
+      printerForm.setFieldsValue({
+        ...printer,
+        port: printer.port || 9100,
+        paper_width: printer.paper_width || "80mm",
+        has_cutter: printer.has_cutter !== false,
+        has_cash_drawer: Boolean(printer.has_cash_drawer),
+        is_default: Boolean(printer.is_default),
+      });
+    } else {
+      setEditingPrinterId(null);
+      setSelectedConnectionType("os_spooler");
+      printerForm.resetFields();
+      printerForm.setFieldsValue({
+        name: "New Printer",
+        role: "billing",
+        connection_type: "os_spooler",
+        target: localPrinters[0]?.name || "80mm Series Printer",
+        port: 9100,
+        paper_width: "80mm",
+        columns: 48,
+        has_cutter: true,
+        has_cash_drawer: false,
+        is_default: configuredPrinters.length === 0,
+      });
+    }
+    setPrinterModalVisible(true);
+  };
+
+  const handleSavePrinter = (values) => {
+    const nextPrinters = [...configuredPrinters];
+    const newEntry = {
+      id: editingPrinterId || `printer_${Date.now()}`,
+      name: values.name.trim(),
+      role: values.role,
+      kitchen_id: values.kitchen_id || null,
+      connection_type: values.connection_type,
+      target: values.target.trim(),
+      port: values.port ? parseInt(values.port, 10) : 9100,
+      paper_width: values.paper_width || "80mm",
+      columns: values.columns ? parseInt(values.columns, 10) : (values.paper_width === "58mm" ? 32 : 48),
+      has_cutter: values.has_cutter !== false,
+      has_cash_drawer: Boolean(values.has_cash_drawer),
+      is_default: Boolean(values.is_default),
+    };
+
+    // If marked default, unmark others with same role
+    if (newEntry.is_default) {
+      nextPrinters.forEach((p) => {
+        if (p.role === newEntry.role) p.is_default = false;
+      });
+    }
+
+    if (editingPrinterId) {
+      const idx = nextPrinters.findIndex((p) => p.id === editingPrinterId);
+      if (idx !== -1) nextPrinters[idx] = newEntry;
+    } else {
+      nextPrinters.push(newEntry);
+    }
+
+    const saved = saveConfiguredPrinters(nextPrinters);
+    setConfiguredPrinters(saved);
+    setPrinterModalVisible(false);
+    message.success(`Printer "${newEntry.name}" saved!`);
+  };
+
+  const handleDeletePrinter = (printerId) => {
+    const nextPrinters = configuredPrinters.filter((p) => p.id !== printerId);
+    const saved = saveConfiguredPrinters(nextPrinters);
+    setConfiguredPrinters(saved);
+    message.success("Printer configuration removed");
+  };
+
+  const handleTestPrinter = async (printer, printSample = true) => {
+    setTestingPrinterId(printer.id);
+    try {
+      const res = await localPrintService.testPrinterLocally(printer, printSample);
+      if (res.ok) {
+        message.success(printSample ? `Test print dispatched to "${printer.name}"!` : `Connected to "${printer.name}" successfully!`);
+      } else {
+        message.error(res.error || "Printer test failed");
+      }
+    } catch (err) {
+      console.error(err);
+      message.error(err.message || "Printer test failed. Check if local print service is running.");
+    } finally {
+      setTestingPrinterId(null);
+    }
+  };
+
+  const handleSavePairingToken = (token) => {
+    savePairingToken(token);
+    setCurrentPairingToken(token);
+    setPairingTokenModalVisible(false);
+    message.success("Pairing token updated!");
+    checkPrintService();
   };
 
   const handleReceiptSettingsSubmit = (values) => {
@@ -186,34 +328,9 @@ const Settings = () => {
     message.success("Store settings reset to defaults (Pozhudhu)");
   };
 
-  const printTestReceipt = async () => {
-    setPrintServiceLoading(true);
-    try {
-      await localPrintService.printReceiptLocally({
-        receiptProfile: getReceiptSettings(),
-        billing_no: "TEST-PRINT",
-        billing_date: new Date().toISOString(),
-        customer_name: "Test Customer",
-        payment_method: "cash",
-        items: [
-          { product_name: "Printer Test", quantity: 1, unit_price: 1, total_price: 1 },
-        ],
-        subtotal_amount: 1,
-        total_amount: 1,
-        paid_amount: 1,
-      }, printerName.trim());
-      message.success("Test receipt sent");
-    } catch (error) {
-      console.error(error);
-      message.error(error.message || "Test print failed");
-    } finally {
-      setPrintServiceLoading(false);
-    }
-  };
-
   const downloadInstallerCommand = () => {
-    const selectedPrinter = printerName || "80mm Series Printer";
-    const script = `# Local Print Service installer\n# Run this from the extracted local-print-service folder.\n\npowershell.exe -NoProfile -ExecutionPolicy Bypass -File .\\install-startup-shortcut.ps1 -PrinterName "${selectedPrinter}"\n\n# For Scheduled Task mode, run PowerShell as Administrator:\n# powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\\install-windows-task.ps1 -PrinterName "${selectedPrinter}"\n`;
+    const defaultTarget = configuredPrinters.find((p) => p.is_default)?.target || "80mm Series Printer";
+    const script = `# Local Print Service installer\n# Run this from the extracted local-print-service folder.\n\npowershell.exe -NoProfile -ExecutionPolicy Bypass -File .\\install-startup-shortcut.ps1 -PrinterName "${defaultTarget}"\n\n# For Scheduled Task mode, run PowerShell as Administrator:\n# powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\\install-windows-task.ps1 -PrinterName "${defaultTarget}"\n`;
     const blob = new Blob([script], { type: "text/plain;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
@@ -517,83 +634,386 @@ const Settings = () => {
           <TabPane
             tab={
               <span>
-                <PrinterOutlined /> Thermal Printer
+                <PrinterOutlined /> Universal Thermal Printers
               </span>
             }
             key="printer"
           >
-            <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+            <Space direction="vertical" size="large" style={{ width: "100%" }}>
+              {/* Service Health & Pairing Alert */}
               <Alert
-                type={printServiceStatus ? "success" : "info"}
+                type={printServiceStatus ? "success" : "warning"}
                 showIcon
-                message={printServiceStatus ? "Local print service is running" : "Configure local thermal printing"}
+                icon={printServiceStatus ? <CheckCircleOutlined /> : <CloseCircleOutlined />}
+                message={
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold">
+                      {printServiceStatus
+                        ? `Local Print Service v${printServiceStatus.version || "2.0"} is Online`
+                        : "Local Print Service is Offline"}
+                    </span>
+                    {currentPairingToken && (
+                      <Tag color="cyan" icon={<KeyOutlined />}>
+                        Authenticated
+                      </Tag>
+                    )}
+                  </div>
+                }
                 description={
-                  printServiceStatus
-                    ? `Connected to ${printServiceStatus.service}. Default printer: ${printServiceStatus.default_printer || "Not set"}`
-                    : "Install and run Local Print Service on each cashier computer. The web app prints to http://127.0.0.1:9123."
+                  <div className="space-y-1">
+                    <p>
+                      {printServiceStatus
+                        ? `Connected to ${printServiceStatus.service} at port ${printServiceStatus.port || 9123}. Ready to print receipts and KOTs.`
+                        : "The local thermal printing daemon is not running on this computer. Start the service or install it using the command below."}
+                    </p>
+                    <div className="flex items-center gap-3 pt-1">
+                      <Button size="small" icon={<ReloadOutlined />} loading={printServiceLoading} onClick={checkPrintService}>
+                        Refresh Service Status
+                      </Button>
+                      <Button size="small" icon={<KeyOutlined />} onClick={() => setPairingTokenModalVisible(true)}>
+                        Pairing Security Token
+                      </Button>
+                      <Button size="small" icon={<DownloadOutlined />} onClick={downloadInstallerCommand}>
+                        Download Startup Script
+                      </Button>
+                    </div>
+                  </div>
                 }
               />
 
-              <Row gutter={16}>
-                <Col xs={24} md={16}>
-                  <Form layout="vertical">
-                    <Form.Item label="Thermal Printer Name">
-                      <Input
-                        list="settings-local-printers"
-                        value={printerName}
-                        onChange={(event) => setPrinterName(event.target.value)}
-                        placeholder="80mm Series Printer"
-                      />
-                      <datalist id="settings-local-printers">
-                        {localPrinters.map((printer) => (
-                          <option key={printer.name} value={printer.name} />
-                        ))}
-                      </datalist>
-                    </Form.Item>
-                  </Form>
-                </Col>
-              </Row>
+              {/* Configured Printers Table Header */}
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-800 m-0">Configured Thermal Printers</h3>
+                  <p className="text-sm text-gray-500 m-0">
+                    Assign different printers for Cashier Billing, Kitchen KOT Stations, or Bar counters.
+                  </p>
+                </div>
+                <Space>
+                  <Button icon={<ReloadOutlined />} onClick={fetchLocalPrinters} loading={printServiceLoading}>
+                    Discover Windows Printers
+                  </Button>
+                  <Button type="primary" icon={<PlusOutlined />} onClick={() => handleOpenAddPrinterModal(null)}>
+                    Add Printer
+                  </Button>
+                </Space>
+              </div>
 
-              <Space wrap>
-                <Button loading={printServiceLoading} icon={<ReloadOutlined />} onClick={checkPrintService}>
-                  Check Service
-                </Button>
-                <Button loading={printServiceLoading} onClick={fetchLocalPrinters}>
-                  Find Local Printers
-                </Button>
-                <Button type="primary" icon={<SaveOutlined />} onClick={savePrinterName}>
-                  Save Printer
-                </Button>
-                <Button loading={printServiceLoading} icon={<PrinterOutlined />} onClick={printTestReceipt}>
-                  Print Test
-                </Button>
-                <Button icon={<DownloadOutlined />} onClick={downloadInstallerCommand}>
-                  Download Install Command
-                </Button>
-              </Space>
+              {/* Configured Printers Table */}
+              <Table
+                dataSource={configuredPrinters}
+                rowKey="id"
+                pagination={false}
+                bordered
+                columns={[
+                  {
+                    title: "Printer Name",
+                    dataIndex: "name",
+                    key: "name",
+                    render: (name, record) => (
+                      <div>
+                        <div className="font-semibold text-gray-900">{name}</div>
+                        <div className="text-xs text-gray-500 font-mono">
+                          {record.connection_type === "network" ? (
+                            <span><WifiOutlined /> LAN: {record.target}:{record.port || 9100}</span>
+                          ) : (
+                            <span><UsbOutlined /> Spooler: {record.target}</span>
+                          )}
+                        </div>
+                      </div>
+                    ),
+                  },
+                  {
+                    title: "Role / Station",
+                    dataIndex: "role",
+                    key: "role",
+                    render: (role, record) => {
+                      if (role === "billing") return <Tag color="blue">Cashier Receipt</Tag>;
+                      if (role === "kot_station") {
+                        const station = kitchenStations.find((k) => String(k.id) === String(record.kitchen_id));
+                        return <Tag color="orange">Kitchen KOT ({station?.kitchen_name || "All Stations"})</Tag>;
+                      }
+                      if (role === "both") return <Tag color="purple">Receipt + KOT</Tag>;
+                      return <Tag>{role}</Tag>;
+                    },
+                  },
+                  {
+                    title: "Paper / Layout",
+                    dataIndex: "paper_width",
+                    key: "paper_width",
+                    render: (width, record) => (
+                      <span className="text-xs font-semibold px-2 py-0.5 rounded bg-gray-100 text-gray-700">
+                        {width || "80mm"} ({record.columns || (width === "58mm" ? 32 : 48)} cols)
+                      </span>
+                    ),
+                  },
+                  {
+                    title: "Options",
+                    key: "options",
+                    render: (_, record) => (
+                      <Space size="small">
+                        {record.has_cutter !== false && <Tag color="green">Auto-Cut</Tag>}
+                        {record.has_cash_drawer && <Tag color="gold">Cash Drawer</Tag>}
+                        {record.is_default && <Tag color="blue">Default</Tag>}
+                      </Space>
+                    ),
+                  },
+                  {
+                    title: "Actions",
+                    key: "actions",
+                    render: (_, record) => (
+                      <Space size="middle">
+                        <Tooltip title="Print Test Pattern">
+                          <Button
+                            size="small"
+                            icon={<PrinterOutlined />}
+                            loading={testingPrinterId === record.id}
+                            onClick={() => handleTestPrinter(record, true)}
+                          >
+                            Test Print
+                          </Button>
+                        </Tooltip>
+                        <Button
+                          size="small"
+                          icon={<EditOutlined />}
+                          onClick={() => handleOpenAddPrinterModal(record)}
+                        />
+                        <Popconfirm
+                          title="Remove Printer"
+                          description="Are you sure you want to delete this printer configuration?"
+                          onConfirm={() => handleDeletePrinter(record.id)}
+                          okText="Delete"
+                          cancelText="Cancel"
+                        >
+                          <Button size="small" danger icon={<DeleteOutlined />} />
+                        </Popconfirm>
+                      </Space>
+                    ),
+                  },
+                ]}
+              />
 
-              <Divider />
+              <Divider style={{ margin: "16px 0" }} />
 
+              {/* Receipt Header & Store Settings Preview */}
               <Card
                 size="small"
-                title={<span><ShopOutlined /> Receipt Header & Store Details</span>}
+                title={<span><ShopOutlined /> Store Receipt Branding</span>}
                 extra={
                   <Button type="link" onClick={() => setActiveTab("store")}>
-                    Edit Store Settings →
+                    Edit Store Header & Terms →
                   </Button>
                 }
               >
-                <p className="text-sm text-gray-600 mb-2">
-                  Receipts printed via this thermal printer will use your configured store branding:
-                </p>
-                <div className="bg-gray-50 p-3 rounded border text-sm space-y-1">
+                <div className="bg-gray-50 p-3 rounded border text-sm grid grid-cols-2 gap-2">
                   <div><strong>Store Name:</strong> {receiptForm.getFieldValue("storeName") || getReceiptSettings().storeName}</div>
                   <div><strong>Bill Title:</strong> {receiptForm.getFieldValue("billTitle") || getReceiptSettings().billTitle}</div>
-                  <div><strong>Instagram:</strong> {receiptForm.getFieldValue("instagram") || getReceiptSettings().instagram}</div>
+                  <div><strong>Phone:</strong> {receiptForm.getFieldValue("cell1") || getReceiptSettings().cell1}</div>
                   <div><strong>GSTIN:</strong> {receiptForm.getFieldValue("gstin") || getReceiptSettings().gstin}</div>
                 </div>
               </Card>
             </Space>
+
+            {/* Add / Edit Printer Modal */}
+            <Modal
+              title={editingPrinterId ? "Edit Printer Configuration" : "Add Universal Thermal Printer"}
+              open={printerModalVisible}
+              onCancel={() => setPrinterModalVisible(false)}
+              footer={null}
+              destroyOnHidden
+            >
+              <Form
+                form={printerForm}
+                layout="vertical"
+                onFinish={handleSavePrinter}
+                initialValues={{
+                  connection_type: "os_spooler",
+                  role: "billing",
+                  paper_width: "80mm",
+                  columns: 48,
+                  has_cutter: true,
+                  has_cash_drawer: false,
+                  port: 9100,
+                }}
+              >
+                <Form.Item
+                  label="Display Name"
+                  name="name"
+                  rules={[{ required: true, message: "Please enter a friendly display name" }]}
+                >
+                  <Input placeholder="e.g. Counter Cashier Printer" />
+                </Form.Item>
+
+                <Row gutter={16}>
+                  <Col span={12}>
+                    <Form.Item label="Printer Role" name="role" rules={[{ required: true }]}>
+                      <Select>
+                        <Select.Option value="billing">Cashier Billing Receipt</Select.Option>
+                        <Select.Option value="kot_station">Kitchen KOT Station</Select.Option>
+                        <Select.Option value="both">Both (Receipt + KOT)</Select.Option>
+                      </Select>
+                    </Form.Item>
+                  </Col>
+                  <Col span={12}>
+                    <Form.Item
+                      noStyle
+                      shouldUpdate={(prev, curr) => prev.role !== curr.role}
+                    >
+                      {({ getFieldValue }) =>
+                        getFieldValue("role") === "kot_station" || getFieldValue("role") === "both" ? (
+                          <Form.Item label="Specific Kitchen Station" name="kitchen_id">
+                            <Select placeholder="All Stations (Default)" allowClear>
+                              {kitchenStations.map((k) => (
+                                <Select.Option key={k.id} value={k.id}>
+                                  {k.kitchen_name}
+                                </Select.Option>
+                              ))}
+                            </Select>
+                          </Form.Item>
+                        ) : null
+                      }
+                    </Form.Item>
+                  </Col>
+                </Row>
+
+                <Form.Item
+                  label="Connection Type"
+                  name="connection_type"
+                  rules={[{ required: true }]}
+                >
+                  <Select onChange={(val) => setSelectedConnectionType(val)}>
+                    <Select.Option value="os_spooler">Windows Spooler (USB / Installed System Driver)</Select.Option>
+                    <Select.Option value="network">Network Thermal Printer (Ethernet LAN / Wi-Fi IP)</Select.Option>
+                  </Select>
+                </Form.Item>
+
+                {selectedConnectionType === "network" ? (
+                  <Row gutter={16}>
+                    <Col span={16}>
+                      <Form.Item
+                        label="Printer IP Address"
+                        name="target"
+                        rules={[
+                          { required: true, message: "Please enter network printer IP" },
+                          {
+                            pattern: /^(10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}|127\.0\.0\.1)$/,
+                            message: "Must be a private local IP (e.g. 192.168.1.100)",
+                          },
+                        ]}
+                      >
+                        <Input placeholder="192.168.1.100" />
+                      </Form.Item>
+                    </Col>
+                    <Col span={8}>
+                      <Form.Item label="Port" name="port" rules={[{ required: true }]}>
+                        <Input placeholder="9100" />
+                      </Form.Item>
+                    </Col>
+                  </Row>
+                ) : (
+                  <Form.Item
+                    label="System Printer Name"
+                    name="target"
+                    rules={[{ required: true, message: "Select or enter installed system printer" }]}
+                  >
+                    <Input
+                      list="discovered-system-printers"
+                      placeholder="e.g. 80mm Series Printer"
+                    />
+                    <datalist id="discovered-system-printers">
+                      {localPrinters.map((p) => (
+                        <option key={p.name} value={p.name} />
+                      ))}
+                    </datalist>
+                  </Form.Item>
+                )}
+
+                <Row gutter={16}>
+                  <Col span={12}>
+                    <Form.Item label="Paper Width" name="paper_width">
+                      <Select>
+                        <Select.Option value="80mm">80mm Paper (Standard)</Select.Option>
+                        <Select.Option value="58mm">58mm Paper (Compact)</Select.Option>
+                      </Select>
+                    </Form.Item>
+                  </Col>
+                  <Col span={12}>
+                    <Form.Item label="Character Columns" name="columns">
+                      <Select>
+                        <Select.Option value={48}>48 Columns (Standard 80mm Font A)</Select.Option>
+                        <Select.Option value={42}>42 Columns (Condensed 80mm)</Select.Option>
+                        <Select.Option value={32}>32 Columns (Standard 58mm Font A)</Select.Option>
+                        <Select.Option value={40}>40 Columns (Condensed 58mm)</Select.Option>
+                      </Select>
+                    </Form.Item>
+                  </Col>
+                </Row>
+
+                <Row gutter={16} className="bg-gray-50 p-3 rounded mb-4">
+                  <Col span={8}>
+                    <Form.Item label="Auto-Cut Paper" name="has_cutter" valuePropName="checked" className="m-0">
+                      <Switch />
+                    </Form.Item>
+                  </Col>
+                  <Col span={8}>
+                    <Form.Item label="Cash Drawer" name="has_cash_drawer" valuePropName="checked" className="m-0">
+                      <Switch />
+                    </Form.Item>
+                  </Col>
+                  <Col span={8}>
+                    <Form.Item label="Default Printer" name="is_default" valuePropName="checked" className="m-0">
+                      <Switch />
+                    </Form.Item>
+                  </Col>
+                </Row>
+
+                <div className="flex justify-end gap-2">
+                  <Button onClick={() => setPrinterModalVisible(false)}>Cancel</Button>
+                  <Button type="primary" htmlType="submit">Save Printer</Button>
+                </div>
+              </Form>
+            </Modal>
+
+            {/* Pairing Token Modal */}
+            <Modal
+              title={<span><KeyOutlined /> Local Print Service Pairing Token</span>}
+              open={pairingTokenModalVisible}
+              onCancel={() => setPairingTokenModalVisible(false)}
+              footer={null}
+            >
+              <p className="text-sm text-gray-600 mb-3">
+                For security against unauthorized websites, the local print service validates an authentication token on port 9123.
+              </p>
+              <Form
+                layout="vertical"
+                initialValues={{ token: currentPairingToken }}
+                onFinish={(vals) => handleSavePairingToken(vals.token)}
+              >
+                <Form.Item
+                  label="Pairing Token (64 Hex Characters)"
+                  name="token"
+                  rules={[{ required: true, message: "Enter token or click Auto-Pair" }]}
+                >
+                  <Input.Password placeholder="Found in local-print-service/.service-token" />
+                </Form.Item>
+                <div className="flex justify-between items-center pt-2">
+                  <Button
+                    onClick={async () => {
+                      const paired = await localPrintService.autoPairService();
+                      if (paired) {
+                        setCurrentPairingToken(paired);
+                        message.success("Auto-paired token retrieved from localhost!");
+                      } else {
+                        message.error("Could not auto-retrieve token. Check if print service is running.");
+                      }
+                    }}
+                  >
+                    Auto-Pair from Localhost
+                  </Button>
+                  <Button type="primary" htmlType="submit">Save Token</Button>
+                </div>
+              </Form>
+            </Modal>
           </TabPane>
         </Tabs>
       </Card>

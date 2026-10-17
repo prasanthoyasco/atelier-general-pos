@@ -5,7 +5,8 @@ import { Tooltip } from "antd";
 import {
   IndianRupee, Users, ShoppingBasket, Wallet, TrendingUp, AlertTriangle, Package, ShoppingCart,
   ArrowUpRight, ArrowDownRight, ClipboardList, ShoppingBag, ShieldCheck, Sparkles, CheckCircle2,
-  ChevronDown, Clock, Medal, Percent, RefreshCw, BarChart3, Plus, ArrowUp, ArrowDown
+  ChevronDown, Clock, Medal, Percent, RefreshCw, BarChart3, Plus, ArrowUp, ArrowDown,
+  CreditCard, PackageOpen, UserCheck
 } from 'lucide-react';
 import dashboardService from "../service/dashboardService";
 import { useBranch } from "../../context/BranchContext";
@@ -133,52 +134,51 @@ const DashboardFull = () => {
     // Take the last 7 days
     const last7Days = merged.slice(-7);
 
-    // If total revenue across these days is 0, generate realistic curves to look active in the UI
-    const totalRev = last7Days.reduce((sum, item) => sum + item.revenue, 0);
-    if (totalRev === 0) {
-      return last7Days.map((item, idx) => {
-        // Mock curve factors: [12K, 18K, 14K, 24K, 16K, 28K, 22K]
-        const factors = [0.6, 0.9, 0.7, 1.2, 0.8, 1.4, 1.1];
-        const baseRev = 16800;
-        const rev = baseRev * factors[idx] * (0.95 + Math.random() * 0.1);
-        const count = Math.round(rev / 121);
-        return {
-          date: item.dateObj.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }),
-          revenue: Math.round(rev),
-          profit: Math.round(rev * 0.37),
-          orders: count
-        };
-      });
+    // If API failed and isDemo, generate preview curves
+    if (dashboardData === null) {
+      const totalRev = last7Days.reduce((sum, item) => sum + item.revenue, 0);
+      if (totalRev === 0) {
+        return last7Days.map((item, idx) => {
+          const factors = [0.6, 0.9, 0.7, 1.2, 0.8, 1.4, 1.1];
+          const baseRev = 16800;
+          const rev = baseRev * factors[idx] * (0.95 + Math.random() * 0.1);
+          const count = Math.round(rev / 121);
+          return {
+            date: item.dateObj.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }),
+            revenue: Math.round(rev),
+            profit: Math.round(rev * 0.37),
+            orders: count
+          };
+        });
+      }
     }
 
-    // Return mapped formatting
+    // Return real data from live API
     return last7Days.map(item => ({
       date: item.dateObj.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }),
-      revenue: item.revenue,
-      profit: item.profit,
-      orders: item.orders
+      revenue: item.revenue || 0,
+      profit: item.profit || 0,
+      orders: item.orders || 0
     }));
   };
 
   const paddedDailyData = getPaddedDailyRevenue();
 
-  // Determine if we need to show demo values (when database selected period data is 0)
-  const isDemo = parseFloat(summary.periodRevenue || 0) === 0;
-  const latestDaily = paddedDailyData[paddedDailyData.length - 1];
+  // ONLY show demo when API data could not be fetched (offline / null)
+  // When API returns live data (even if 0 sales today), isDemo is false and real live data is shown
+  const isDemo = dashboardData === null;
 
-  const displayRevenue = isDemo ? latestDaily.revenue : parseFloat(summary.periodRevenue);
-  const displayBills = isDemo ? latestDaily.orders : parseInt(summary.periodBills);
-  const displayProfit = isDemo ? latestDaily.profit : displayRevenue * 0.37;
-  const displayAvgBill = displayBills > 0 ? Math.round(displayRevenue / displayBills) : 121;
-  const displayCustomers = isDemo ? Math.round(displayBills * 0.75) : summary.totalCustomers;
+  const displayRevenue = parseFloat(summary.periodRevenue || 0);
+  const displayBills = parseInt(summary.periodBills || 0);
+  const displayProfit = displayRevenue > 0 ? (displayRevenue * 0.37) : 0;
+  const displayAvgBill = displayBills > 0 ? Math.round(displayRevenue / displayBills) : 0;
+  const displayCustomers = summary.totalCustomers || 0;
 
-  const totalProducts = summary.totalProducts || 100;
+  const totalProducts = summary.totalProducts || 0;
   const lowStockCount = summary.lowStockCount || 0;
-  const inventoryHealthVal = isDemo
-    ? 94
-    : (totalProducts > 0
-      ? Math.max(0, Math.min(100, Math.round(((totalProducts - lowStockCount) / totalProducts) * 100)))
-      : 94);
+  const inventoryHealthVal = totalProducts > 0
+    ? Math.max(0, Math.min(100, Math.round(((totalProducts - lowStockCount) / totalProducts) * 100)))
+    : 100;
 
   // Formatting large numbers nicely
   const formatValue = (num, isCurrency = false) => {
@@ -192,25 +192,26 @@ const DashboardFull = () => {
   // Create sparkline series data points
   const getSparklineSeries = (type) => {
     return paddedDailyData.map(d => ({
-      value: type === 'revenue' ? d.revenue :
-        type === 'profit' ? d.profit :
-          type === 'orders' ? d.orders :
-            type === 'average' ? (d.orders > 0 ? d.revenue / d.orders : 121) :
-              Math.max(2, Math.round(d.orders * 0.75))
+      value: type === 'revenue' ? (d.revenue || 0) :
+        type === 'profit' ? (d.profit || 0) :
+          type === 'orders' ? (d.orders || 0) :
+            type === 'average' ? (d.orders > 0 ? d.revenue / d.orders : 0) :
+              (d.orders || 0)
     }));
   };
 
   // Trend computations (+/- % compared to yesterday)
   const getTrendPercentage = (type) => {
     const series = getSparklineSeries(type);
-    if (series.length < 2) return { value: 12, isPositive: true };
+    if (series.length < 2) return { value: 0, isPositive: true };
     const last = series[series.length - 1].value;
     const prev = series[series.length - 2].value;
-    if (prev === 0) return { value: 15, isPositive: true };
+    if (prev === 0 && last === 0) return { value: 0, isPositive: true };
+    if (prev === 0) return { value: last > 0 ? 100 : 0, isPositive: last >= 0 };
     const diff = last - prev;
     const pct = Math.round((diff / prev) * 100);
     return {
-      value: Math.abs(pct) || 8,
+      value: Math.abs(pct),
       isPositive: pct >= 0
     };
   };
@@ -220,8 +221,8 @@ const DashboardFull = () => {
     const data = getSparklineSeries(type);
     const gradId = `sparkGrad_${type}`;
     return (
-      <div style={{ height: 40, width: '100%', userSelect: 'none' }} className="mt-2">
-        <ResponsiveContainer width="100%" height="100%">
+      <div style={{ height: 40, width: '100%', minWidth: 0, userSelect: 'none' }} className="mt-2 min-w-0">
+        <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
           <AreaChart data={data} margin={{ top: 2, right: 2, left: 2, bottom: 2 }}>
             <defs>
               <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
@@ -248,18 +249,21 @@ const DashboardFull = () => {
   const getPaymentChartData = () => {
     const rawMethods = dashboardData?.paymentMethods || [];
     if (rawMethods.length === 0) {
-      return [
-        { name: 'UPI', value: 9960, count: 82, percent: 54 },
-        { name: 'Cash', value: 5180, count: 42, percent: 28 },
-        { name: 'Card', value: 3310, count: 28, percent: 18 }
-      ];
+      if (isDemo) {
+        return [
+          { name: 'UPI', value: 9960, count: 82, percent: 54 },
+          { name: 'Cash', value: 5180, count: 42, percent: 28 },
+          { name: 'Card', value: 3310, count: 28, percent: 18 }
+        ];
+      }
+      return [];
     }
 
     const totalAmt = rawMethods.reduce((sum, item) => sum + parseFloat(item.total_amount || 0), 0);
     return rawMethods.map(item => {
       const val = parseFloat(item.total_amount || 0);
       const pct = totalAmt > 0 ? Math.round((val / totalAmt) * 100) : 0;
-      let label = item.method;
+      let label = item.method || 'Other';
       if (label.toLowerCase().includes('upi')) label = 'UPI';
       else if (label.toLowerCase().includes('cash')) label = 'Cash';
       else if (label.toLowerCase().includes('card') || label.toLowerCase().includes('credit') || label.toLowerCase().includes('debit')) label = 'Card';
@@ -267,7 +271,7 @@ const DashboardFull = () => {
       return {
         name: label,
         value: val,
-        count: item.count,
+        count: item.count || 0,
         percent: pct
       };
     });
@@ -282,12 +286,20 @@ const DashboardFull = () => {
     const topProd = dashboardData?.topProducts?.[0];
 
     // Insight 1: Revenue trend
-    const revTrend = getTrendPercentage('revenue');
-    insights.push({
-      text: `Revenue is up ${revTrend.value}% compared to last week`,
-      colorClass: 'bg-emerald-50 text-emerald-800 border-emerald-100',
-      iconColor: 'text-emerald-500'
-    });
+    if (displayRevenue > 0) {
+      const revTrend = getTrendPercentage('revenue');
+      insights.push({
+        text: `Revenue is ${revTrend.isPositive ? 'up' : 'down'} ${revTrend.value}% compared to previous period`,
+        colorClass: 'bg-emerald-50 text-emerald-800 border-emerald-100',
+        iconColor: 'text-emerald-500'
+      });
+    } else {
+      insights.push({
+        text: `POS terminal is open and ready for today's orders`,
+        colorClass: 'bg-indigo-50 text-indigo-800 border-indigo-100',
+        iconColor: 'text-indigo-500'
+      });
+    }
 
     // Insight 2: Bestseller product
     if (topProd) {
@@ -298,7 +310,7 @@ const DashboardFull = () => {
       });
     } else {
       insights.push({
-        text: "Bread - Whole Wheat is today's bestseller",
+        text: `Catalog has ${summary.totalProducts || 0} active products ready for checkout`,
         colorClass: 'bg-blue-50 text-blue-800 border-blue-100',
         iconColor: 'text-blue-500'
       });
@@ -306,70 +318,91 @@ const DashboardFull = () => {
 
     // Insight 3: Low stock status
     if (lowStockCount > 0) {
-      const prodName = dashboardData?.lowStockProducts?.[0]?.product_name || "Milk";
+      const prodName = dashboardData?.lowStockProducts?.[0]?.product_name || "inventory items";
       insights.push({
-        text: `${prodName} stock is low, reorder soon`,
+        text: `${lowStockCount} items (${prodName}) low in stock, reorder soon`,
         colorClass: 'bg-amber-50 text-amber-800 border-amber-100',
         iconColor: 'text-amber-500'
       });
     } else {
       insights.push({
-        text: "Milk stock will last for 1 more day",
-        colorClass: 'bg-amber-50 text-amber-800 border-amber-100',
-        iconColor: 'text-amber-500'
+        text: `Inventory health is optimal at 100%`,
+        colorClass: 'bg-emerald-50 text-emerald-800 border-emerald-100',
+        iconColor: 'text-emerald-500'
       });
     }
 
     // Insight 4: UPI payment trend
-    const upiShare = paymentChartData.find(p => p.name === 'UPI')?.percent || 54;
-    insights.push({
-      text: `UPI payments represent ${upiShare}% of sales today`,
-      colorClass: 'bg-purple-50 text-purple-800 border-purple-100',
-      iconColor: 'text-purple-500'
-    });
+    const upiShare = paymentChartData.find(p => p.name === 'UPI')?.percent;
+    if (upiShare) {
+      insights.push({
+        text: `UPI payments represent ${upiShare}% of sales today`,
+        colorClass: 'bg-purple-50 text-purple-800 border-purple-100',
+        iconColor: 'text-purple-500'
+      });
+    } else {
+      insights.push({
+        text: `Live insights and payment distribution update as bills are finalized`,
+        colorClass: 'bg-purple-50 text-purple-800 border-purple-100',
+        iconColor: 'text-purple-500'
+      });
+    }
 
     return insights;
   };
 
   const aiInsights = getAIInsights();
 
-  // Cashier list mockup scaling with displayRevenue
+  // Cashier list
   const getCashierPerformance = () => {
-    const cashiers = [
-      { name: "Rajesh Kumar", share: 0.38, targetPct: 98 },
-      { name: "Priya Sharma", share: 0.28, targetPct: 87 },
-      { name: "Arjun Patel", share: 0.18, targetPct: 76 },
-      { name: "Kavya Reddy", share: 0.10, targetPct: 65 },
-      { name: "Mohan Singh", share: 0.06, targetPct: 54 },
-    ];
-    return cashiers.map(c => ({
-      ...c,
-      sales: Math.round(displayRevenue * c.share)
-    }));
+    if (isDemo && displayRevenue > 0) {
+      const cashiers = [
+        { name: "Rajesh Kumar", share: 0.38, targetPct: 98 },
+        { name: "Priya Sharma", share: 0.28, targetPct: 87 },
+        { name: "Arjun Patel", share: 0.18, targetPct: 76 },
+        { name: "Kavya Reddy", share: 0.10, targetPct: 65 },
+        { name: "Mohan Singh", share: 0.06, targetPct: 54 },
+      ];
+      return cashiers.map(c => ({
+        ...c,
+        sales: Math.round(displayRevenue * c.share)
+      }));
+    }
+    return [];
   };
 
   const cashierPerformance = getCashierPerformance();
 
-  // Top Customers mockup scaling with displayRevenue
+  // Top Customers from actual bills
   const getTopCustomersList = () => {
     const rawBills = dashboardData?.recentBills || [];
-    const uniqueNames = Array.from(new Set(rawBills.map(b => b.customer_name).filter(name => name && name !== 'Walk-in Customer')));
-    const staticCustomers = [
-      { name: "Ramesh Singh", bills: 28, share: 0.25 },
-      { name: "Priya Sharma", bills: 24, share: 0.20 },
-      { name: "Amit Kumar", bills: 20, share: 0.17 },
-      { name: "Sneha Reddy", bills: 18, share: 0.14 },
-      { name: "Vikram Joshi", bills: 15, share: 0.12 }
-    ];
-
-    return staticCustomers.map((cust, i) => {
-      const name = uniqueNames[i] || cust.name;
-      return {
-        name,
-        orders: cust.bills,
-        spent: Math.round(displayRevenue * cust.share)
-      };
+    const customerMap = {};
+    rawBills.forEach(b => {
+      const name = b.customer_name;
+      if (name && name !== 'Walk-in Customer') {
+        if (!customerMap[name]) customerMap[name] = { name, orders: 0, spent: 0 };
+        customerMap[name].orders += 1;
+        customerMap[name].spent += parseFloat(b.total_amount || 0);
+      }
     });
+    const realCustomers = Object.values(customerMap).sort((a, b) => b.spent - a.spent).slice(0, 5);
+
+    if (realCustomers.length > 0) {
+      return realCustomers;
+    }
+
+    if (isDemo && displayRevenue > 0) {
+      const staticCustomers = [
+        { name: "Ramesh Singh", orders: 28, spent: Math.round(displayRevenue * 0.25) },
+        { name: "Priya Sharma", orders: 24, spent: Math.round(displayRevenue * 0.20) },
+        { name: "Amit Kumar", orders: 20, spent: Math.round(displayRevenue * 0.17) },
+        { name: "Sneha Reddy", orders: 18, spent: Math.round(displayRevenue * 0.14) },
+        { name: "Vikram Joshi", orders: 15, spent: Math.round(displayRevenue * 0.12) }
+      ];
+      return staticCustomers;
+    }
+
+    return [];
   };
 
   const topCustomersList = getTopCustomersList();
@@ -436,7 +469,7 @@ const DashboardFull = () => {
             value={period}
             onChange={setPeriod}
             className="w-36 rounded-xl shadow-sm border-none hover:shadow"
-            dropdownClassName="rounded-xl border-none"
+            popupClassName="rounded-xl border-none"
             suffixIcon={<ChevronDown size={14} className="text-slate-400" />}
           >
             <Option value="today">Today</Option>
@@ -671,8 +704,8 @@ const DashboardFull = () => {
             </div>
           </div>
 
-          <div style={{ height: 256, width: '100%' }}>
-            <ResponsiveContainer width="100%" height="100%">
+          <div style={{ height: 256, width: '100%', minWidth: 0 }} className="min-w-0">
+            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
               <AreaChart data={paddedDailyData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                 <defs>
                   <linearGradient id="mainTrendGrad" x1="0" y1="0" x2="0" y2="1">
@@ -720,8 +753,8 @@ const DashboardFull = () => {
           </div>
 
           {/* Semi-donut gauge */}
-          <div style={{ height: 128, width: '100%', position: 'relative', display: 'flex', justifyContent: 'center', alignItems: 'center' }} className="mt-4 select-none">
-            <ResponsiveContainer width="100%" height="100%">
+          <div style={{ height: 128, width: '100%', minWidth: 0, position: 'relative', display: 'flex', justifyContent: 'center', alignItems: 'center' }} className="mt-4 select-none min-w-0">
+            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
               <PieChart>
                 <Pie
                   data={[
@@ -801,20 +834,20 @@ const DashboardFull = () => {
 
             <div className="space-y-3.5">
               {dashboardData?.topProducts && dashboardData.topProducts.length > 0 ? (
-                dashboardData.topProducts.slice(0, 3).map((prod, idx) => (
+                dashboardData.topProducts.slice(0, 5).map((prod, idx) => (
                   <div key={idx} className="flex items-center justify-between">
                     <div className="min-w-0 pr-2">
                       <p className="text-sm font-bold text-slate-600 truncate">{prod.product_name}</p>
-                      <p className="text-[9px] font-bold text-slate-400 truncate">{prod.product_code}</p>
+                      <p className="text-[9px] font-bold text-slate-400 truncate">{prod.product_code || `PROD-${idx + 1}`}</p>
                     </div>
                     <div className="text-right flex-shrink-0">
                       <p className="text-sm font-bold text-slate-700">{prod.total_quantity} sold</p>
-                      <span className="text-[9px] font-bold text-emerald-500">↑ 12%</span>
+                      <span className="text-[9px] font-bold text-emerald-500">₹{parseFloat(prod.total_revenue || 0).toLocaleString('en-IN')}</span>
                     </div>
                   </div>
                 ))
-              ) : (
-                // Mock elements to populate design
+              ) : isDemo ? (
+                // Mock elements to populate design only if isDemo
                 [
                   { name: "Bread - Whole Wheat", code: "PROD-102", sold: 128, trend: "↑ 18%" },
                   { name: "Milk - 1 Litre", code: "PROD-098", sold: 96, trend: "↑ 12%" },
@@ -835,6 +868,12 @@ const DashboardFull = () => {
                     </div>
                   </div>
                 ))
+              ) : (
+                <div className="py-8 text-center text-slate-400">
+                  <PackageOpen size={26} className="mx-auto text-slate-300 mb-1.5" />
+                  <p className="text-xs font-semibold text-slate-500 !mb-0">No items sold yet</p>
+                  <p className="text-[11px] text-slate-400 !mb-0">Top products will appear here once billed</p>
+                </div>
               )}
               {isDemo && (
                 <div className="mt-2.5 p-2 rounded-xl bg-indigo-50/70 border border-indigo-100/80 text-center">
@@ -962,45 +1001,53 @@ const DashboardFull = () => {
             </div>
 
             {/* Donut chart and legend side by side */}
-            <div style={{ height: 144, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }} className="mt-2 select-none">
-              <div className="w-1/2 h-full relative flex items-center justify-center">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={paymentChartData}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={28}
-                      outerRadius={42}
-                      paddingAngle={3}
-                      dataKey="value"
-                    >
-                      {paymentChartData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={PAYMENT_COLORS[index % PAYMENT_COLORS.length]} />
-                      ))}
-                    </Pie>
-                  </PieChart>
-                </ResponsiveContainer>
-                <div className="absolute flex flex-col items-center justify-center">
-                  <span className="text-[8px] uppercase font-bold text-slate-400 leading-none">Total</span>
-                  <span className="text-sm font-bold text-slate-700 leading-none mt-0.5">{totalPaymentTransactions}</span>
+            {paymentChartData.length > 0 ? (
+              <div style={{ height: 144, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }} className="mt-2 select-none">
+                <div className="w-1/2 h-full relative flex items-center justify-center min-w-0" style={{ minWidth: 0 }}>
+                  <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+                    <PieChart>
+                      <Pie
+                        data={paymentChartData}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={28}
+                        outerRadius={42}
+                        paddingAngle={3}
+                        dataKey="value"
+                      >
+                        {paymentChartData.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={PAYMENT_COLORS[index % PAYMENT_COLORS.length]} />
+                        ))}
+                      </Pie>
+                    </PieChart>
+                  </ResponsiveContainer>
+                  <div className="absolute flex flex-col items-center justify-center">
+                    <span className="text-[8px] uppercase font-bold text-slate-400 leading-none">Total</span>
+                    <span className="text-sm font-bold text-slate-700 leading-none mt-0.5">{totalPaymentTransactions}</span>
+                  </div>
+                </div>
+                <div className="w-1/2 flex flex-col gap-1.5 justify-center">
+                  {paymentChartData.slice(0, 3).map((entry, idx) => (
+                    <div key={idx} className="flex flex-col">
+                      <div className="flex items-center justify-between gap-1">
+                        <div className="flex items-center gap-1 min-w-0">
+                          <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: PAYMENT_COLORS[idx % PAYMENT_COLORS.length] }}></span>
+                          <span className="text-[10px] font-bold text-slate-500 truncate">{entry.name}</span>
+                        </div>
+                        <span className="text-[10px] font-bold text-slate-700">{entry.percent}%</span>
+                      </div>
+                      <span className="text-[8px] font-bold text-slate-400 pl-3 leading-none">₹{Math.round(entry.value).toLocaleString('en-IN')}</span>
+                    </div>
+                  ))}
                 </div>
               </div>
-              <div className="w-1/2 flex flex-col gap-1.5 justify-center">
-                {paymentChartData.slice(0, 3).map((entry, idx) => (
-                  <div key={idx} className="flex flex-col">
-                    <div className="flex items-center justify-between gap-1">
-                      <div className="flex items-center gap-1 min-w-0">
-                        <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: PAYMENT_COLORS[idx % PAYMENT_COLORS.length] }}></span>
-                        <span className="text-[10px] font-bold text-slate-500 truncate">{entry.name}</span>
-                      </div>
-                      <span className="text-[10px] font-bold text-slate-700">{entry.percent}%</span>
-                    </div>
-                    <span className="text-[8px] font-bold text-slate-400 pl-3 leading-none">₹{Math.round(entry.value).toLocaleString('en-IN')}</span>
-                  </div>
-                ))}
+            ) : (
+              <div className="h-36 flex flex-col items-center justify-center text-center text-slate-400">
+                <CreditCard size={26} className="text-slate-300 mb-1.5" />
+                <p className="text-xs font-semibold text-slate-500 !mb-0">No payment records yet</p>
+                <p className="text-[11px] text-slate-400 !mb-0">Payment breakdown will appear as orders are paid</p>
               </div>
-            </div>
+            )}
           </div>
 
           <div className="flex justify-between items-center text-[10px] font-semibold text-slate-400 pt-2 border-t border-slate-50">
@@ -1089,26 +1136,36 @@ const DashboardFull = () => {
             </div>
 
             <div className="space-y-4">
-              {topCustomersList.map((cust, idx) => (
-                <div key={idx} className="flex items-center justify-between">
-                  <div className="flex items-center gap-3 min-w-0">
-                    {/* Ranked circle */}
-                    <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0 ${idx === 0 ? 'bg-amber-100 text-amber-700' :
-                      idx === 1 ? 'bg-slate-100 text-slate-700' :
-                        idx === 2 ? 'bg-orange-100 text-orange-700' :
-                          'bg-slate-50 text-slate-500'
-                      }`}>
-                      {idx + 1}
-                    </span>
-                    <span className="text-sm font-bold text-slate-600 truncate">{cust.name}</span>
-                  </div>
+              {topCustomersList.length > 0 ? (
+                topCustomersList.map((cust, idx) => (
+                  <div key={idx} className="flex items-center justify-between">
+                    <div className="flex items-center gap-3 min-w-0">
+                      {/* Ranked circle */}
+                      <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0 ${idx === 0 ? 'bg-amber-100 text-amber-700' :
+                        idx === 1 ? 'bg-slate-100 text-slate-700' :
+                          idx === 2 ? 'bg-orange-100 text-orange-700' :
+                            'bg-slate-50 text-slate-500'
+                        }`}>
+                        {idx + 1}
+                      </span>
+                      <span className="text-sm font-bold text-slate-600 truncate">{cust.name}</span>
+                    </div>
 
-                  <div className="text-right flex-shrink-0">
-                    <span className="text-[10px] font-bold text-slate-400 mr-4">{cust.orders} Orders</span>
-                    <span className="text-sm font-bold text-slate-600">₹{cust.spent.toLocaleString('en-IN')}</span>
+                    <div className="text-right flex-shrink-0">
+                      <span className="text-[10px] font-bold text-slate-400 mr-4">{cust.orders} Orders</span>
+                      <span className="text-sm font-bold text-slate-600">₹{cust.spent.toLocaleString('en-IN')}</span>
+                    </div>
                   </div>
+                ))
+              ) : (
+                <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
+                  <Users size={28} className="text-slate-300 mb-2" />
+                  <p className="text-sm font-bold text-slate-700 mb-0.5">No Customer Purchases</p>
+                  <p className="text-xs text-slate-400 max-w-xs">
+                    Top customer rankings will appear here as bills are created.
+                  </p>
                 </div>
-              ))}
+              )}
             </div>
           </div>
         </div>
@@ -1129,26 +1186,36 @@ const DashboardFull = () => {
             </div>
 
             <div className="space-y-4">
-              {cashierPerformance.map((emp, idx) => (
-                <div key={idx} className="space-y-1">
-                  <div className="flex justify-between items-center text-sm">
-                    <div className="flex items-center gap-2 min-w-0">
-                      {/* Placeholder circle image initials */}
-                      <span className="w-6 h-6 rounded-full bg-slate-100 text-[10px] font-bold text-slate-600 flex items-center justify-center flex-shrink-0">
-                        {emp.name.split(' ').map(n => n[0]).join('')}
-                      </span>
-                      <span className="font-bold text-slate-600 truncate">{emp.name}</span>
+              {cashierPerformance.length > 0 ? (
+                cashierPerformance.map((emp, idx) => (
+                  <div key={idx} className="space-y-1">
+                    <div className="flex justify-between items-center text-sm">
+                      <div className="flex items-center gap-2 min-w-0">
+                        {/* Placeholder circle image initials */}
+                        <span className="w-6 h-6 rounded-full bg-slate-100 text-[10px] font-bold text-slate-600 flex items-center justify-center flex-shrink-0">
+                          {emp.name.split(' ').map(n => n[0]).join('')}
+                        </span>
+                        <span className="font-bold text-slate-600 truncate">{emp.name}</span>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-[10px] font-bold text-slate-400 mr-2">Sales: ₹{emp.sales.toLocaleString('en-IN')}</span>
+                        <span className="font-bold text-slate-700">{emp.targetPct}%</span>
+                      </div>
                     </div>
-                    <div className="text-right">
-                      <span className="text-[10px] font-bold text-slate-400 mr-2">Sales: ₹{emp.sales.toLocaleString('en-IN')}</span>
-                      <span className="font-bold text-slate-700">{emp.targetPct}%</span>
+                    <div className="w-full bg-slate-100 rounded-full h-1.5">
+                      <div className="bg-emerald-500 h-1.5 rounded-full" style={{ width: `${emp.targetPct}%` }}></div>
                     </div>
                   </div>
-                  <div className="w-full bg-slate-100 rounded-full h-1.5">
-                    <div className="bg-emerald-500 h-1.5 rounded-full" style={{ width: `${emp.targetPct}%` }}></div>
-                  </div>
+                ))
+              ) : (
+                <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
+                  <UserCheck size={28} className="text-slate-300 mb-2" />
+                  <p className="text-sm font-bold text-slate-700 mb-0.5">No Staff Billing Recorded</p>
+                  <p className="text-xs text-slate-400 max-w-xs">
+                    Employee sales totals will populate as orders are completed.
+                  </p>
                 </div>
-              ))}
+              )}
             </div>
           </div>
         </div>

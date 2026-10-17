@@ -51,6 +51,7 @@ import Settings from "./components/pages/Settings";
 import ComingSoon from "./billing/pages/ComingSoon";
 import DeveloperLogin from "./ticket/pages/DeveloperLogin";
 import DeveloperPortal from "./ticket/pages/DeveloperPortal";
+import { NetworkProvider } from "./components/common/NetworkStatusNotifier";
 
 const routeModules = import.meta.glob("./*/AppRoutes.jsx", { eager: true });
 
@@ -117,10 +118,12 @@ const App = () => {
         <AuthProvider>
           <EmployeeAuthProvider>
             <BranchProvider>
-              <Loading duration={3000} />
-              <Suspense fallback={<div className="p-4"><Loading /></div>}>
-                <AppInner />
-              </Suspense>
+              <NetworkProvider>
+                <Loading duration={3000} />
+                <Suspense fallback={<div className="p-4"><Loading /></div>}>
+                  <AppInner />
+                </Suspense>
+              </NetworkProvider>
             </BranchProvider>
           </EmployeeAuthProvider>
         </AuthProvider>

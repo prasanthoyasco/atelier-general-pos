@@ -81,8 +81,29 @@ api.interceptors.request.use(
 
 // Add response interceptor for error handling
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('app:network-online'));
+    }
+    return response;
+  },
   async (error) => {
+    // Dispatch offline/server failure event if request failed due to network or server outage
+    if (typeof window !== 'undefined') {
+      const isNetworkFailure =
+        !error.response ||
+        error.code === 'ERR_NETWORK' ||
+        error.code === 'ECONNABORTED' ||
+        (error.message && String(error.message).toLowerCase().includes('network error'));
+      const isServerFailure = error.response && error.response.status >= 500;
+
+      if (isNetworkFailure || isServerFailure || (typeof navigator !== 'undefined' && navigator.onLine === false)) {
+        window.dispatchEvent(new CustomEvent('app:network-offline', {
+          detail: { isNetworkFailure, isServerFailure }
+        }));
+      }
+    }
+
     // Don't show toast for login requests - let the login page handle it
     const isLoginRequest = error.config?.url?.includes('/login');
     const isRefreshRequest = error.config?.url?.includes('/refresh-token');

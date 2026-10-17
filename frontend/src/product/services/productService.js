@@ -8,7 +8,14 @@ const productService = {
   update: (id, data) => api.put(`/product/product/${id}`, data),
   remove: (id) => api.delete(`/product/product/${id}`),
   bulkUpload: (data) => api.post("/product/product/bulk-upload", data),
-  getKitchens: () => api.get("/product/kitchens"),
+  // Kitchen Stations & Routing Management
+  getKitchens: (params = {}) => api.get("/product/kitchens", { params }),
+  getKitchenById: (id) => api.get(`/product/kitchens/${id}`),
+  createKitchen: (data) => api.post("/product/kitchens", data),
+  updateKitchen: (id, data) => api.put(`/product/kitchens/${id}`, data),
+  deleteKitchen: (id) => api.delete(`/product/kitchens/${id}`),
+  assignKitchenItems: (id, data) => api.post(`/product/kitchens/${id}/assign-items`, data),
+  getKitchenStats: (params = {}) => api.get("/product/kitchens/stats", { params }),
 
   // Upload image to DigitalOcean Spaces
   uploadImage: (file) => {

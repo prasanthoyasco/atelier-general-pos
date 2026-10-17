@@ -183,7 +183,7 @@ const BillDetailsModal = ({ visible, onClose, billId, initialData }) => {
                 </Space>,
             ]}
             width={980}
-            bodyStyle={{ maxHeight: "80vh", overflowY: "auto", padding: 0, scrollbarWidth: "none" }}
+            styles={{ body: { maxHeight: "80vh", overflowY: "auto", padding: 0, scrollbarWidth: "none" } }}
         >
             <style>
                 {`

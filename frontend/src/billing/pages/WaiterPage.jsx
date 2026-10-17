@@ -15,6 +15,7 @@ import { useAuth } from "../../context/AuthContext.jsx";
 import { useBranch } from "../../context/BranchContext.jsx";
 import FoodThumbnail from "../utils/FoodThumbnail.jsx";
 import { broadcastKOTEvent, kotChannel } from "../utils/kotBroadcast.js";
+import localPrintService from "../service/localPrintService.js";
 import dayjs from "dayjs";
 
 const fmt = (v) =>
@@ -371,6 +372,16 @@ export default function WaiterPage() {
     setSubmittingKOT(true);
     try {
       const tableLabel = selectedTable.table_no || `Table ${selectedTable.id}`;
+
+      // Strict Table Occupancy Check: Only 1 active order per table until paid
+      const tableStats = queueStats.byTable[tableLabel] || { total: 0 };
+      const isOccupied = tableStats.total > 0;
+      if (!loadedBillId && isOccupied) {
+        message.error(`${tableLabel} is currently occupied with an active order. Order must be paid before placing a new order on this table.`);
+        setActiveTab("tables");
+        return;
+      }
+
       const payload = {
         branch_id: effectiveBranchId,
         customer_name: "Dine-in Guest",
@@ -401,12 +412,32 @@ export default function WaiterPage() {
         })),
       };
 
+      let billData = null;
       if (loadedBillId) {
-        await billingService.update(loadedBillId, payload);
+        const res = await billingService.update(loadedBillId, payload);
+        billData = res?.data;
         message.success(`KOT updated for ${tableLabel}!`);
       } else {
-        await billingService.create(payload);
+        const res = await billingService.create(payload);
+        billData = res?.data;
         message.success(`KOT sent to kitchen for ${tableLabel}!`);
+      }
+
+      // Auto-dispatch station KOT tickets to configured printers
+      if (billData?.kots && Array.isArray(billData.kots)) {
+        for (const kot of billData.kots) {
+          try {
+            await localPrintService.printKOTLocally({
+              ...kot,
+              billing_no: billData.billing_no,
+              table_name: tableLabel,
+              waiter_name: user?.name || user?.username,
+              items: kot.kotItems || kot.items || payload.billing_items,
+            });
+          } catch (printErr) {
+            console.warn("Station KOT printer not reachable:", printErr.message);
+          }
+        }
       }
 
       // Broadcast and reset
@@ -417,9 +448,21 @@ export default function WaiterPage() {
       setLoadedBillId(null);
       setCartDrawerOpen(false);
 
-      // Refresh queues & switch to Pickup or Tables tab
+      // Refresh queues & auto-select next available table
       fetchKitchenQueue();
       fetchTables();
+
+      const nextVacant = tables.find((t) => {
+        const tNo = formatTableLabel(t.table_name || t.table_no || `Table ${t.id}`);
+        const stats = queueStats.byTable[tNo] || { total: 0 };
+        return stats.total === 0 && tNo !== tableLabel;
+      });
+      if (nextVacant) {
+        const nextLabel = formatTableLabel(nextVacant.table_name || nextVacant.table_no || `Table ${nextVacant.id}`);
+        setSelectedTable({ id: nextVacant.id, table_no: nextLabel });
+        message.info(`Auto-selected next available table: ${nextLabel}`);
+      }
+
       setActiveTab("pickup");
     } catch (err) {
       console.error("Failed to send KOT:", err);

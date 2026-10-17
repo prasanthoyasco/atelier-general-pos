@@ -4,7 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node server.js"
+    "start": "node supervisor.js",
+    "start:direct": "node server.js",
+    "test": "node test-service.js"
   },
   "dependencies": {
     "cors": "^2.8.5",

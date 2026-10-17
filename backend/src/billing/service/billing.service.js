@@ -45,6 +45,36 @@ const billingService = {
         if (!existing) isUnique = true;
       }
 
+      // 2.5️⃣ Strict Table Occupancy Check: Only ONE active order per table until paid
+      if (data.branch_id && (data.table_id || data.counter_no)) {
+        const tableConditions = [];
+        if (data.table_id) {
+          tableConditions.push({ table_id: data.table_id });
+        }
+        if (data.counter_no) {
+          tableConditions.push({ counter_no: data.counter_no });
+          if (data.counter_no.startsWith("Counter ")) {
+            tableConditions.push({ counter_no: data.counter_no.replace("Counter ", "Table ") });
+          } else if (data.counter_no.startsWith("Table ")) {
+            tableConditions.push({ counter_no: data.counter_no.replace("Table ", "Counter ") });
+          }
+        }
+
+        const existingUnpaid = await Billing.findOne({
+          where: {
+            branch_id: data.branch_id,
+            status: { [Op.notIn]: ['paid', 'cancelled'] },
+            [Op.or]: tableConditions
+          },
+          transaction: t
+        });
+
+        if (existingUnpaid) {
+          const tLabel = data.counter_no ? data.counter_no.replace("Counter ", "Table ") : `Table #${data.table_id}`;
+          throw new Error(`${tLabel} is already occupied with active order ${existingUnpaid.billing_no}. The existing order must be paid before placing a new order on this table.`);
+        }
+      }
+
       // 3️⃣ Validate products and prepare items
       let subtotal = 0;
       let totalQuantity = 0;
@@ -226,11 +256,29 @@ const billingService = {
         { transaction: t }
       );
 
-      // 7.5️⃣ Update Table Status if table_id is present
+      // 7.5️⃣ Update Table Status
+      const isPaid = data.status === 'paid';
       if (data.table_id) {
          await Table.update(
-            { status: data.status === 'paid' ? 'available' : 'occupied' },
+            { status: isPaid ? 'available' : 'occupied' },
             { where: { id: data.table_id }, transaction: t }
+         );
+      } else if (data.counter_no && data.branch_id) {
+         const tRaw = data.counter_no.replace('Counter ', '').replace('Table ', '').trim();
+         await Table.update(
+            { status: isPaid ? 'available' : 'occupied' },
+            {
+              where: {
+                branch_id: data.branch_id,
+                [Op.or]: [
+                  { table_no: tRaw },
+                  { table_no: `T${tRaw}` },
+                  { table_name: data.counter_no },
+                  { table_name: data.counter_no.replace('Counter ', 'Table ') }
+                ]
+              },
+              transaction: t
+            }
          );
       }
 
@@ -319,11 +367,15 @@ const billingService = {
         );
       }
 
-      // 1️⃣1️⃣ Return Billing with Items, Customer, and Coupon info
       const result = await Billing.findByPk(billing.id, {
         include: [
           { model: BillingItem, as: "items" },
-          { model: Customer, as: "customer" }
+          { model: Customer, as: "customer" },
+          {
+            model: BillingKOT,
+            as: "kots",
+            include: [{ model: BillingKOTItem, as: "kotItems" }],
+          },
         ],
         transaction: t,
       });
@@ -898,11 +950,30 @@ const billingService = {
         const dueAmount = Math.max(0, totalAmount - paidAmount);
 
         // Update Table status
+        const isTableReleased = isBillPaid || data.status === 'cancelled';
         const targetTableId = data.table_id || billing.table_id;
         if (targetTableId) {
           await Table.update(
-            { status: isBillPaid ? 'available' : 'occupied' },
+            { status: isTableReleased ? 'available' : 'occupied' },
             { where: { id: targetTableId }, transaction: t }
+          );
+        } else if ((data.counter_no || billing.counter_no) && billing.branch_id) {
+          const cNo = data.counter_no || billing.counter_no;
+          const tRaw = cNo.replace('Counter ', '').replace('Table ', '').trim();
+          await Table.update(
+            { status: isTableReleased ? 'available' : 'occupied' },
+            {
+              where: {
+                branch_id: billing.branch_id,
+                [Op.or]: [
+                  { table_no: tRaw },
+                  { table_no: `T${tRaw}` },
+                  { table_name: cNo },
+                  { table_name: cNo.replace('Counter ', 'Table ') }
+                ]
+              },
+              transaction: t
+            }
           );
         }
 

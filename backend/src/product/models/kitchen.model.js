@@ -11,6 +11,38 @@ const Kitchen = sequelize.define("Kitchen", {
         type: DataTypes.STRING(100),
         allowNull: false,
     },
+    code: {
+        type: DataTypes.STRING(20),
+        allowNull: true,
+    },
+    description: {
+        type: DataTypes.TEXT,
+        allowNull: true,
+    },
+    color_tag: {
+        type: DataTypes.STRING(20),
+        defaultValue: "#4F46E5",
+    },
+    default_prep_time: {
+        type: DataTypes.INTEGER,
+        defaultValue: 15, // in minutes
+    },
+    printer_ip: {
+        type: DataTypes.STRING(50),
+        allowNull: true,
+    },
+    printer_port: {
+        type: DataTypes.INTEGER,
+        defaultValue: 9100,
+    },
+    auto_print: {
+        type: DataTypes.BOOLEAN,
+        defaultValue: false,
+    },
+    is_default: {
+        type: DataTypes.BOOLEAN,
+        defaultValue: false,
+    },
     branch_id: {
         type: DataTypes.UUID,
         allowNull: false,

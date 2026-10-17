@@ -11,6 +11,7 @@ router.use('/product', productRoutes);
 router.use('/product', CategoryRoutes);
 router.use('/product', SubcategoryRoutes);
 router.use('/product', kitchenRoutes);
+router.use('/', kitchenRoutes);
 router.use('/product/addons', addonRoutes);
 
 export default router;

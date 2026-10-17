@@ -22,7 +22,8 @@ import {
   Megaphone,
   MessageCircle,
   Sparkles,
-  CalendarCheck
+  CalendarCheck,
+  ChefHat
 } from "lucide-react";
 import { Popover, Tooltip } from "antd";
 import { FaWhatsapp } from "react-icons/fa";
@@ -118,6 +119,7 @@ const Sidebar = ({
       children: [
         { key: "/product/list", label: "Product List", icon: <List size={18} /> },
         { key: "/product/add", label: "Add Product", icon: <PlusCircle size={18} /> },
+        { key: "/product/kitchens", label: "Kitchen Stations", icon: <ChefHat size={18} /> },
         { key: "/product/addons", label: "Add-ons", icon: <Sparkles size={18} /> },
         { key: "/category/list", label: "Category List", icon: <List size={18} /> },
         { key: "/category/add", label: "Add Category", icon: <PlusCircle size={18} /> },
