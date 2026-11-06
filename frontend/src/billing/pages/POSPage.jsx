@@ -1210,6 +1210,8 @@ export default function POSPage() {
       }
 
       broadcastKOTEvent("KOT_STATUS_UPDATED");
+      broadcastKOTEvent("BILL_SETTLED", { table: tableNo, bill_id: settledBillData?.id });
+      broadcastKOTEvent("TABLE_RELEASED", { table: tableNo });
 
       if (shouldPrint && settledBillData) {
         try {
