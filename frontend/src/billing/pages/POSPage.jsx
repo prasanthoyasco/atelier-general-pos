@@ -960,10 +960,12 @@ export default function POSPage() {
     );
   }, [tables]);
 
-  // Active table mapping from live kitchen orders
+  // Active table mapping from live kitchen orders (only active unpaid & uncancelled orders)
   const activeTableMap = useMemo(() => {
     const map = {};
     kitchenOrders.forEach((order) => {
+      if (order.status === "paid" || order.status === "cancelled") return;
+
       let rawTbl = order.table_no;
       if (!rawTbl && order.counter_no) {
         rawTbl = order.counter_no.startsWith("Counter ")
@@ -977,8 +979,6 @@ export default function POSPage() {
     return map;
   }, [kitchenOrders]);
 
-  const activeTablesCount = Object.keys(activeTableMap).length;
-
   // Helper to determine if a table has an active unpaid order
   const isTableOccupied = (tblName) => {
     if (!tblName) return false;
@@ -986,6 +986,11 @@ export default function POSPage() {
     const orders = activeTableMap[formatted] || activeTableMap[tblName] || [];
     return orders.some((o) => o.status !== "paid" && o.status !== "cancelled");
   };
+
+  // Active occupied tables count among this branch's tables (ALL_TABLES)
+  const activeTablesCount = useMemo(() => {
+    return ALL_TABLES.filter((t) => isTableOccupied(t)).length;
+  }, [ALL_TABLES, activeTableMap]);
 
   // Helper to find next available/vacant table
   const findNextAvailableTable = (afterTable = null) => {
@@ -2894,7 +2899,7 @@ export default function POSPage() {
               })
               .map((tbl) => {
               const activeOrders = activeTableMap[tbl] || [];
-              const isOccupied = activeOrders.length > 0;
+              const isOccupied = isTableOccupied(tbl);
               const isSelected = tableNo === tbl;
               const primaryOrder = activeOrders[0];
 

@@ -1198,10 +1198,37 @@ export default function WaiterPage() {
                             <ArrowRight size={12} className="shrink-0" />
                           </span>
                         ) : hasDraft ? (
-                          <span className="text-indigo-700 font-bold flex items-center gap-1">
-                            <span>Resume Draft</span>
-                            <ArrowRight size={12} className="shrink-0" />
-                          </span>
+                          <div className="flex items-center justify-between w-full">
+                            <span className="text-indigo-700 font-bold flex items-center gap-1">
+                              <span>Resume Draft</span>
+                              <ArrowRight size={12} className="shrink-0" />
+                            </span>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                Modal.confirm({
+                                  title: `Customer Walked Out?`,
+                                  content: `Clear draft order for ${tNo}? The table will become immediately free.`,
+                                  okText: "Yes, Clear Draft",
+                                  okType: "danger",
+                                  cancelText: "Keep Draft",
+                                  onOk: () => {
+                                    clearDraftForTable(tNo);
+                                    if (formatTableLabel(selectedTable?.table_no) === tNo) {
+                                      handleClearCurrentDraft();
+                                    } else {
+                                      message.info(`Cleared draft for ${tNo}`);
+                                    }
+                                  },
+                                });
+                              }}
+                              className="text-[10px] text-rose-600 hover:text-rose-700 font-bold bg-rose-50 hover:bg-rose-100 px-2 py-0.5 rounded-lg border border-rose-200 flex items-center gap-1 cursor-pointer transition shadow-2xs"
+                            >
+                              <Trash2 size={10} />
+                              <span>Clear</span>
+                            </button>
+                          </div>
                         ) : isOccupied ? (
                           <span className="text-amber-800 font-semibold truncate max-w-[130px]">
                             {activeOrder?.items?.length || 0} dishes ordered {draftItemsCount > 0 ? `(+${draftItemsCount} draft)` : ""}
@@ -1288,9 +1315,9 @@ export default function WaiterPage() {
                   type="button"
                   onClick={() => {
                     Modal.confirm({
-                      title: "Clear Order Draft?",
-                      content: `Are you sure you want to clear uncommitted draft items for ${formatTableLabel(selectedTable?.table_no)}?`,
-                      okText: "Yes, Clear",
+                      title: "Customer Walked Out?",
+                      content: `Clear uncommitted draft items for ${formatTableLabel(selectedTable?.table_no)}? Table will be released.`,
+                      okText: "Yes, Clear Draft",
                       okType: "danger",
                       cancelText: "Keep",
                       onOk: () => {
@@ -1298,10 +1325,10 @@ export default function WaiterPage() {
                       },
                     });
                   }}
-                  className="text-xs text-rose-600 font-bold hover:underline cursor-pointer flex items-center gap-1"
+                  className="px-2.5 py-1 rounded-lg text-xs text-rose-600 hover:text-rose-700 font-bold bg-rose-50 hover:bg-rose-100 border border-rose-200 transition cursor-pointer flex items-center gap-1 shadow-2xs"
                 >
                   <Trash2 size={12} />
-                  <span>Clear Draft</span>
+                  <span>Clear</span>
                 </button>
               )}
             </div>
@@ -2012,6 +2039,30 @@ export default function WaiterPage() {
                 : "Send KOT to Kitchen"}
             </span>
           </button>
+
+          {/* Customer Walked Out / Discard Draft Button */}
+          {(cart.length > 0 || (orderNotes && orderNotes.trim())) && (
+            <button
+              type="button"
+              onClick={() => {
+                Modal.confirm({
+                  title: "Customer Walked Out?",
+                  content: `Clear uncommitted draft items for ${formatTableLabel(selectedTable?.table_no)}? Table will be released immediately.`,
+                  okText: "Yes, Clear Draft",
+                  okType: "danger",
+                  cancelText: "Keep Draft",
+                  onOk: () => {
+                    handleClearCurrentDraft();
+                    setCartDrawerOpen(false);
+                  },
+                });
+              }}
+              className="w-full py-2.5 rounded-xl text-xs font-bold text-rose-600 bg-rose-50 hover:bg-rose-100 border border-rose-200 flex items-center justify-center gap-1.5 cursor-pointer transition"
+            >
+              <Trash2 size={13} />
+              <span>Customer Walked Out (Clear Draft)</span>
+            </button>
+          )}
         </div>
       </Drawer>
 
@@ -2038,7 +2089,7 @@ export default function WaiterPage() {
           <div className="relative">
             <ClipboardList size={19} strokeWidth={activeTab === "order" ? 2.5 : 2} />
             {cartTotals.totalQty > 0 && (
-              <span className="absolute -top-1.5 -right-2.5 px-1.5 py-0.2 rounded-full bg-slate-900 text-white text-[9px] font-black leading-none">
+              <span className="absolute -top-1.5 -right-2.5 min-w-[18px] h-[18px] px-1 rounded-full bg-black text-white text-[10px] font-black flex items-center justify-center leading-none ring-2 ring-white shadow-xs">
                 {cartTotals.totalQty}
               </span>
             )}
@@ -2056,7 +2107,7 @@ export default function WaiterPage() {
           <div className="relative">
             <UtensilsCrossed size={19} strokeWidth={activeTab === "pickup" ? 2.5 : 2} />
             {queueStats.totalReadyItems > 0 && (
-              <span className="absolute -top-1.5 -right-3 px-1.5 py-0.2 rounded-full bg-emerald-500 !text-white text-[9px] font-black leading-none animate-pulse">
+              <span className="absolute -top-1.5 -right-2.5 min-w-[18px] h-[18px] px-1 rounded-full bg-emerald-500 !text-white text-[10px] font-black flex items-center justify-center leading-none ring-2 ring-white shadow-xs animate-pulse">
                 {queueStats.totalReadyItems}
               </span>
             )}
