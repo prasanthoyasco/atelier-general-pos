@@ -19,6 +19,81 @@ import { v4 as uuidv4 } from "uuid";
 const billingService = {
   // ✅ Create Billing with Items
   async createBillingWithItems(data) {
+    // 0️⃣ Seamless Order Continuation: If table is already occupied with an active unpaid order, automatically append items into it rather than throwing an error!
+    if (data.branch_id && (data.table_id || data.counter_no)) {
+      const tableConditions = [];
+      if (data.table_id) {
+        tableConditions.push({ table_id: data.table_id });
+      }
+      if (data.counter_no) {
+        tableConditions.push({ counter_no: data.counter_no });
+        if (data.counter_no.startsWith("Counter ")) {
+          tableConditions.push({ counter_no: data.counter_no.replace("Counter ", "Table ") });
+        } else if (data.counter_no.startsWith("Table ")) {
+          tableConditions.push({ counter_no: data.counter_no.replace("Table ", "Counter ") });
+        }
+      }
+
+      const existingUnpaid = await Billing.findOne({
+        where: {
+          branch_id: data.branch_id,
+          status: { [Op.notIn]: ['paid', 'cancelled'] },
+          [Op.or]: tableConditions
+        },
+        include: [{ model: BillingItem, as: "items" }]
+      });
+
+      if (existingUnpaid) {
+        console.log(`[Order Continuation] Table is already occupied with active order ${existingUnpaid.billing_no}. Automatically adding items to same KOT.`);
+
+        const incomingItems = data.billing_items || data.items || [];
+        const existingItemsPayload = (existingUnpaid.items || []).map((ei) => ({
+          id: ei.id,
+          billing_item_id: ei.id,
+          product_id: ei.product_id,
+          quantity: ei.quantity,
+          unit_price: ei.unit_price,
+          unit: ei.unit,
+          mrp: ei.mrp,
+          discount_percentage: ei.discount_percentage,
+          discount: ei.discount,
+          tax: ei.tax,
+          total_price: ei.total_price,
+          size: ei.size,
+          color: ei.color,
+          barcode: ei.barcode,
+          addons: ei.addons
+        }));
+
+        const combinedItems = [...existingItemsPayload];
+        for (const inc of incomingItems) {
+          const matchExisting = combinedItems.find((ci) => 
+            (inc.id && ci.id === inc.id) || 
+            (inc.billing_item_id && ci.billing_item_id === inc.billing_item_id) || 
+            ci.product_id === inc.product_id
+          );
+          if (matchExisting) {
+            if (inc.id || inc.billing_item_id) {
+              matchExisting.quantity = Math.max(matchExisting.quantity, inc.quantity || 1);
+            } else {
+              matchExisting.quantity += (inc.quantity || 1);
+            }
+          } else {
+            combinedItems.push(inc);
+          }
+        }
+
+        const updatePayload = {
+          ...data,
+          billing_items: combinedItems,
+          notes: existingUnpaid.notes
+            ? (data.notes && !existingUnpaid.notes.includes(data.notes) ? `${existingUnpaid.notes} | ${data.notes}` : existingUnpaid.notes)
+            : data.notes
+        };
+
+        return await this.updateBillingWithItems(existingUnpaid.id, updatePayload);
+      }
+    }
     return await sequelize.transaction(async (t) => {
       // 1️⃣ Handle Customer - Find or Create
       let customer = null;
@@ -71,7 +146,7 @@ const billingService = {
 
         if (existingUnpaid) {
           const tLabel = data.counter_no ? data.counter_no.replace("Counter ", "Table ") : `Table #${data.table_id}`;
-          throw new Error(`${tLabel} is already occupied with active order ${existingUnpaid.billing_no}. The existing order must be paid before placing a new order on this table.`);
+          console.log(`${tLabel} active order ${existingUnpaid.billing_no} in progress.`);
         }
       }
 
@@ -1252,11 +1327,13 @@ const billingService = {
       });
     } else {
       // For POS Table Management & Waiter Pickup Queues: Fetch from Billing
+      const activeWindowStart = new Date(Date.now() - 24 * 60 * 60 * 1000);
       const rows = await Billing.findAll({
         where: {
           branch_id: branchId,
           status: { [Op.notIn]: ['paid', 'cancelled'] },
-          counter_no: { [Op.ne]: null }
+          counter_no: { [Op.ne]: null },
+          createdAt: { [Op.gte]: activeWindowStart }
         },
         attributes: [
           'id', 'billing_no', 'counter_no', 'notes',
